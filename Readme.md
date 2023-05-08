@@ -1,6 +1,6 @@
 # Chess.com Blocker
 
-A Chrome extension that calculates a player's number of losses in the past day on chess.com. If this is greater than the maxGames number input by the user, the [chess.com/play/online](chess.com/play/online) page is blocked.
+A Chrome and Firefox extension that calculates a player's number of losses in the past day on chess.com. If this is greater than the maxGames number input by the user, the [chess.com/play/online](chess.com/play/online) page is blocked.
 
 ## Installation
 **Chrome**
@@ -12,6 +12,15 @@ A Chrome extension that calculates a player's number of losses in the past day o
 3. Enable "Developer mode" by clicking on the toggle switch in the top right corner.
 
 4. Click on "Load unpacked" and select the extracted folder.
+
+**Firefox**
+1. Download the Firefox repository as a ZIP file and extract it to a folder on your computer.
+
+2. Open Firefox and go to `about:debugging`.
+
+3. Click on "This Firefox" and then on "Load Temporary Add-on".
+
+4. Select the `manifest.json` file from the extracted folder.
 
 ## Usage
 Click the extension. Input your username and the max number of games you wish to play. Once you exceed the number of games played, the chess.com/play/online page will be blocked. 
