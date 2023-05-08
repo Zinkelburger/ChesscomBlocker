@@ -1,0 +1,36 @@
+{
+    "manifest_version": 3,
+    "name": "Chess.com Blocker",
+    "version": "1.0",
+    "permissions": [
+    "activeTab",
+    "storage",
+    "scripting",
+    "tabs"
+    ],
+    "host_permissions": [
+    "https://api.chess.com/*",
+    "*://*.chess.com/*"
+    ],
+    "background": {
+    "scripts": ["background.js"]
+    },
+    "content_scripts": [
+    {
+    "matches": ["https://www.chess.com/*"],
+    "js": ["content.js"]
+    }
+    ],
+    "action": {
+    "default_icon": "knook.png",
+    "default_popup": "options.html"
+    },
+    "options_ui": {
+    "page": "options.html"
+    },
+    "browser_specific_settings": {
+    "gecko": {
+    "id": "identifier@chessblockerextension.com"
+    }
+    }
+}
