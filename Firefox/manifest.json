@@ -3,10 +3,7 @@
     "name": "Chess.com Blocker",
     "version": "1.0",
     "permissions": [
-    "activeTab",
-    "storage",
-    "scripting",
-    "tabs"
+    "storage"
     ],
     "host_permissions": [
     "https://api.chess.com/*",
