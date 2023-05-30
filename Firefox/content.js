@@ -2,8 +2,8 @@
 browser.storage.sync.get({ blocked: false }, function(items) {
     console.log('Received blocked value from chrome.storage:', items.blocked);
     // If blocked is true, update the page accordingly
-    if (items.blocked === true && window.location.href === 'https://www.chess.com/play/online') {
-    document.body.innerHTML = '<h1 style="color: white; background-color: black;">Chess.com has been blocked because you have exceeded the maximum number of games allowed.</h1>';
+    if (items.blocked === true && /https?:\/\/.*chess\.com\/(game|play\/online)/.test(window.location.href)) {
+        document.body.innerHTML = '<h1 style="color: white; background-color: black;">Chess.com has been blocked because you have exceeded the maximum number of games allowed.</h1>';
     }
    });
    
