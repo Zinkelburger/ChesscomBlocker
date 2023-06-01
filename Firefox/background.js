@@ -54,8 +54,9 @@ async function checkGamesPlayed() {
     // Check if the user has exceeded the maximum number of losses allowed
     if (losses > maxGames) {
       // Set blocked to true in chrome.storage
-      console.log('Setting blocked to true in chrome.storage');
       await browser.storage.sync.set({ blocked: true });
+    } else {
+        await browser.storage.sync.set({ blocked: false });
     }
   }
   
