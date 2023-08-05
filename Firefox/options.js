@@ -1,11 +1,13 @@
 // Save options to browser.storage
 function save_options() {
-    let maxGames = document.getElementById('max-games').value;
-    let username = document.getElementById('username').value;
-    browser.storage.sync.set({
-        maxGames: maxGames,
-        username: username
-    });
+        let maxGames = document.getElementById('max-games').value;
+        let username = document.getElementById('username').value;
+        browser.storage.sync.set({
+                maxGames: maxGames,
+                username: username
+        });
+        // query the api
+        browser.runtime.sendMessage({ action: "checkGamesPlayed" });
 }
 
 // Load options from browser.storage

@@ -1,3 +1,9 @@
+browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
+        if (message.action === "checkGamesPlayed") {
+          checkGamesPlayed();
+        }
+});
+
 // Function to check the chess.com API for the number of games played
 async function checkGamesPlayed() {
     // Get the maximum number of games and username from chrome.storage
@@ -52,31 +58,28 @@ async function checkGamesPlayed() {
     await browser.storage.sync.set({ losses: losses });
   
     // Check if the user has exceeded the maximum number of losses allowed
-    if (losses > maxGames) {
-      // Set blocked to true in chrome.storage
-      await browser.storage.sync.set({ blocked: true });
+    if (losses >= maxGames) {
+        // Set blocked to true in chrome.storage
+        await browser.storage.sync.set({ blocked: true });
     } else {
         await browser.storage.sync.set({ blocked: false });
     }
-  }
-  
-  // Check the number of games played every 60 seconds
-  setInterval(checkGamesPlayed, 60000);
-  
-  // Run checkGamesPlayed when the extension is clicked
-  browser.action.onClicked.addListener((tab) => {
-   checkGamesPlayed();
-  });
-  
-  // Run checkGamesPlayed when the current site is chess.com
-  browser.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-   if (changeInfo.url && changeInfo.url.startsWith("https://www.chess.com/")) {
-   checkGamesPlayed();
-   }
-  });
-  
-  browser.runtime.onMessage.addListener(function(request, sender, sendResponse) {
-   if (request.action === 'checkGamesPlayed') {
-   checkGamesPlayed();
-   }
-  });
+}
+
+// Run checkGamesPlayed when the extension is clicked
+browser.action.onClicked.addListener((tab) => {
+        checkGamesPlayed();
+});
+
+// Run checkGamesPlayed when the current site is chess.com
+browser.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+        if (changeInfo.url && changeInfo.url.startsWith("https://www.chess.com/")) {
+                checkGamesPlayed();
+        }
+});
+
+browser.runtime.onMessage.addListener(function(request, sender, sendResponse) {
+        if (request.action === 'checkGamesPlayed') {
+                checkGamesPlayed();
+        }
+});
