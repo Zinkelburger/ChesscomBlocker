@@ -50,6 +50,24 @@ const callback = (mutationList, observer) => {
                         for (const node of mutation.removedNodes) {
                                 if (node.id && node.id.includes("placeholder-")) {
                                         // do the process of trying 100 times to find the node again
+                                        let attempts = 0;
+                                        let targetNode;
+                                        const intervalId = setInterval(() => {
+                                                // Find the first element whose id attribute contains the string "placeholder-"
+                                                targetNode = document.querySelector("[id*='placeholder-']");
+                                                if (targetNode) {
+                                                        console.log("Found target node:", targetNode);
+                                                        clearInterval(intervalId);
+                                                        observer.observe(targetNode, config);
+                                                } else {
+                                                        attempts++;
+                                                        console.log(`Attempt ${attempts}: target node not found`);
+                                                        if (attempts >= 100) {
+                                                                console.log("Max attempts reached, stopping search");
+                                                                clearInterval(intervalId);
+                                                        }
+                                                }
+                                        }, 5000);
                                 }
                         }
                 }
@@ -61,12 +79,12 @@ const callback = (mutationList, observer) => {
                         browser.runtime.sendMessage({ action: "checkGamesPlayed" });
                 }, 1000);
         }
-
-  
 };
 
 // Create an observer instance linked to the callback function
 const observer = new MutationObserver(callback);
+
+
 
 
 
