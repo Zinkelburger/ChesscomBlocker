@@ -1,18 +1,19 @@
 <!DOCTYPE html>
 <html>
- <head>
- <title>Chess Blocker Options</title>
- </head>
- <body>
- <h1>Chess Blocker Options</h1>
- <form id="options-form">
- <label for="max-games">Maximum number of losses:</label><br>
- <input type="number" id="max-games" name="max-games"><br><br>
- <label for="username">Chess.com username:</label><br>
- <input type="text" id="username" name="username"><br><br>
- <input type="submit" value="Save">
- </form>
- <script src="options.js"></script>
- <p>Number of losses: <span id="blocked"></span></p>
- </body>
+<head>
+        <title>Chess Blocker Options</title>
+        <link href="./style.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+        <h1>Chess<br>Blocker</h1>
+        <form id="options-form">
+                <label for="max-games">Max number of losses:</label><br>
+                <input type="number" id="max-games" name="max-games"><br><br>
+                <label for="username">Chess.com username:</label><br>
+                <input type="text" id="username" name="username"><br><br>
+                <input type="submit" value="Save">
+        </form>
+        <script src="options.js"></script>
+        <p>Number of losses: <span id="blocked"></span></p>
+</body>
 </html>
