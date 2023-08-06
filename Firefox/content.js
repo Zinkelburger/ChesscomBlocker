@@ -44,41 +44,16 @@ const config = { attributes: true, childList: true, subtree: true };
 
 // Callback function to execute when mutations are observed
 const callback = (mutationList, observer) => {
-        for (const mutation of mutationList) {
-                console.log(mutation);
-                if (mutation.type === "childList") {
-                        for (const node of mutation.removedNodes) {
-                                if (node.id && node.id.includes("placeholder-")) {
-                                        // do the process of trying 100 times to find the node again
-                                        let attempts = 0;
-                                        let targetNode;
-                                        const intervalId = setInterval(() => {
-                                                // Find the first element whose id attribute contains the string "placeholder-"
-                                                targetNode = document.querySelector("[id*='placeholder-']");
-                                                if (targetNode) {
-                                                        console.log("Found target node:", targetNode);
-                                                        clearInterval(intervalId);
-                                                        observer.observe(targetNode, config);
-                                                } else {
-                                                        attempts++;
-                                                        console.log(`Attempt ${attempts}: target node not found`);
-                                                        if (attempts >= 100) {
-                                                                console.log("Max attempts reached, stopping search");
-                                                                clearInterval(intervalId);
-                                                        }
-                                                }
-                                        }, 5000);
-                                }
-                        }
-                }
-                // I do it twice just to make sure
-                setTimeout(() => {
-                        browser.runtime.sendMessage({ action: "checkGamesPlayed" });
-                }, 1000);
-                setTimeout(() => {
-                        browser.runtime.sendMessage({ action: "checkGamesPlayed" });
-                }, 1000);
-        }
+        // wait a bit, do it a few times
+        setTimeout(() => {
+                browser.runtime.sendMessage({ action: "checkGamesPlayed" });
+        }, 1500);
+        setTimeout(() => {
+                browser.runtime.sendMessage({ action: "checkGamesPlayed" });
+        }, 5000);
+        setTimeout(() => {
+                browser.runtime.sendMessage({ action: "checkGamesPlayed" });
+        }, 10000);
 };
 
 // Create an observer instance linked to the callback function
