@@ -1,65 +1,103 @@
-// Check the current value of "blocked" in chrome.storage when the content script is first injected into the page
-browser.storage.sync.get({ blocked: false }, function(items) {
-        console.log('Received blocked value from chrome.storage:', items.blocked);
+// Check the current value of "blocked" in browser.storage when the content script is first injected into the page
+browser.storage.sync.get({
+        blocked: false
+    }, function(items) {
         // If blocked is true, update the page accordingly
         if (items.blocked === true && /https?:\/\/.*chess\.com\/(game|play\/online)/.test(window.location.href)) {
-                document.body.innerHTML = '<h1 style="color: white; background-color: black;">Chess.com has been blocked because you have exceeded the maximum number of losses allowed.</h1>';
+            document.body.outerHTML = `
+            <body style="display: flex; justify-content: center; height: 100vh; background-color:rgb(48, 46, 43); padding: 0px;">
+            <div style="
+                display: flex; 
+                margin-top: 40px;
+                justify-content: center;
+
+            ">
+                <h1 style="
+                    color: white; 
+                    text-shadow: 2px 2px 4px rgba(0,0,0,0.5); 
+                    font-family: 'Arial', sans-serif;
+                    text-align: center;">
+                    Chess.com Blocker: Daily game limit met. Please take a well-deserved break.
+                </h1>
+            </div>
+        </body>
+        `;
+    
         }
-});
-   
-// Listen for changes to the "blocked" value in chrome.storage
+    });
+    
+// Listen for changes to the "blocked" value in browser.storage
 browser.storage.onChanged.addListener(function(changes, namespace) {
-        // Check if the "blocked" value has changed
-        if (changes.blocked) {
-                console.log('Received blocked change:', changes.blocked.newValue);
-                // If so, update the page accordingly
-                if (changes.blocked.newValue === true && /https?:\/\/.*chess\.com\/(game|play\/online)/.test(window.location.href)) {
-                        document.body.innerHTML = '<h1 style="color: white; background-color: black;">Chess.com has been blocked because you have exceeded the maximum number of losses allowed.</h1>';
-                }
+    // Check if the "blocked" value has changed
+    if (changes.blocked) {
+        // If so, update the page accordingly
+        if (changes.blocked.newValue === true && /https?:\/\/.*chess\.com\/(game|play\/online)/.test(window.location.href)) {
+            document.body.outerHTML = `
+        <body style="display: flex; justify-content: center; height: 100vh; background-color:rgb(48, 46, 43); padding: 0px;">
+            <div style="
+                display: flex; 
+                margin-top: 40px;
+                justify-content: center;
+            ">
+                <h1 style="
+                    color: white; 
+                    text-shadow: 2px 2px 4px rgba(0,0,0,0.5); 
+                    font-family: 'Arial', sans-serif;
+                    text-align: center;">
+                    Chess.com Blocker: Daily game limit met. Please take a well-deserved break.
+                </h1>
+            </div>
+        </body>
+        `;
+
         }
+    }
 });
 
-// Find the first element whose id attribute contains the string "placeholder-"
-let attempts = 0;
-let targetNode;
-const intervalId = setInterval(() => {
-        // Find the first element whose id attribute contains the string "placeholder-"
-        targetNode = document.querySelector("[id*='placeholder-']");
-        if (targetNode) {
-                console.log("Found target node:", targetNode);
-                clearInterval(intervalId);
-                observer.observe(targetNode, config);
-        } else {
-                attempts++;
-                console.log(`Attempt ${attempts}: target node not found`);
-                if (attempts >= 100) {
-                        console.log("Max attempts reached, stopping search");
-                        clearInterval(intervalId);
+// Function to handle mutations
+function handleMutations(mutationsList, observer) {
+    for (let mutation of mutationsList) {
+        if (mutation.type === 'childList') {
+            for (let addedNode of mutation.addedNodes) {
+                if (addedNode.classList && addedNode.classList.contains('player-game-over-component')) {
+                    let ratingChangeElement = addedNode.querySelector('.rating-score-change');
+                    if (ratingChangeElement) {
+                        let ratingChange = parseInt(ratingChangeElement.textContent.trim());
+                        if (ratingChange < -4) {
+                            browser.runtime.sendMessage({
+                                action: 'LOSS_DETECTED'
+                            });
+                        }
+                    }
+                    // call the api after 15 seconds
+                    setTimeout(function() {
+                        browser.runtime.sendMessage({
+                            action: 'checkGamesPlayed'
+                        });
+                    }, 15000);
                 }
+            }
         }
-}, 5000);
+    }
+}
 
-// Options for the observer (which mutations to observe)
-const config = { attributes: true, childList: true, subtree: true };
+// Start observing the DOM
+function startObserving() {
+    // Target the player-bottom component
+    const targetNode = document.querySelector('.player-component.player-bottom');
 
-// Callback function to execute when mutations are observed
-const callback = (mutationList, observer) => {
-        // wait a bit, do it a few times
-        setTimeout(() => {
-                browser.runtime.sendMessage({ action: "checkGamesPlayed" });
-        }, 1500);
-        setTimeout(() => {
-                browser.runtime.sendMessage({ action: "checkGamesPlayed" });
-        }, 5000);
-        setTimeout(() => {
-                browser.runtime.sendMessage({ action: "checkGamesPlayed" });
-        }, 10000);
-};
+    if (targetNode) {
+        const config = {
+            attributes: false,
+            childList: true,
+            subtree: true
+        };
+        const observer = new MutationObserver(handleMutations);
+        observer.observe(targetNode, config);
+    } else {
+        console.error('Target node not found');
+    }
+}
 
-// Create an observer instance linked to the callback function
-const observer = new MutationObserver(callback);
-
-
-
-
-
+// Invoke the function to start observing
+startObserving();

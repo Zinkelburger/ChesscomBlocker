@@ -28,16 +28,25 @@ Click the extension. Input your username and the max number of games you wish to
 It is blocked until you no longer have have X losses in the last 24 hours.
 
 ## Contributing
-
 Contributions are welcome! Please open an issue or submit a pull request if you have any suggestions or improvements.
 
 ## Image Source
 I use the knook image obtained from reddit.com/r/anarchychess/wiki
 
-![The Knook](knook.png)
+![The Knook](Firefox/knook.png)
+
+## How the code works
+To get the number of losses, I:
++ Get the user's games from the past day with the chess.com API
++ Count the number of losses
+
+This loss check is triggered after a game ends, 
+
+If the number of losses is above the maxGames, some html is injected into the page instead of the normal content.
+
+There is also the case where your game ends but the chess.com api hasn't updated yet. I handle it by using a mutation observer on `.player-component.player-bottom`. I look for the player game over component, and specifically parse the `.rating-score-change` class. If `current # of losses` + 1 > `maxGames` then the user is blocked immediately, and I don't have to wait for the chess.com API to update.
 
 ## License
-
 This project uses the MIT License.
 
 Copyright (c) 2023 Zinkelburger

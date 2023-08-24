@@ -1,7 +1,7 @@
 // Function to check the chess.com API for the number of games played
 async function checkGamesPlayed() {
-    // Get the maximum number of games and username from browser storage
-    let items = await browser.storage.sync.get({
+    // Get the maximum number of games and username from chrome storage
+    let items = await chrome.storage.sync.get({
         maxGames: 5,
         username: ''
     });
@@ -47,45 +47,45 @@ async function checkGamesPlayed() {
         i--;
     } while (now - game.end_time <= 86400 && i >= 0);
 
-    // Update the number of losses in browser.storage
-    await browser.storage.sync.set({
+    // Update the number of losses in chrome.storage
+    await chrome.storage.sync.set({
         losses: losses
     });
 
     // Check if the user has exceeded the maximum number of losses allowed
     if (losses >= maxGames) {
-        // Set blocked to true in browser.storage
-        await browser.storage.sync.set({
+        // Set blocked to true in chrome.storage
+        await chrome.storage.sync.set({
             blocked: true
         });
     } else {
-        await browser.storage.sync.set({
+        await chrome.storage.sync.set({
             blocked: false
         });
     }
 }
 
 // Run checkGamesPlayed when the extension is clicked
-browser.action.onClicked.addListener((tab) => {
+chrome.action.onClicked.addListener((tab) => {
     checkGamesPlayed();
 });
 
 // Run checkGamesPlayed when the current site is chess.com
-browser.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     if (changeInfo.url && changeInfo.url.startsWith("https://www.chess.com/")) {
         checkGamesPlayed();
     }
 });
 
-browser.runtime.onMessage.addListener(function(request, sender, sendResponse) {
+chrome.runtime.onMessage.addListener(function(request, sender, sendResponse) {
     if (request.action === 'checkGamesPlayed') {
         checkGamesPlayed();
     } else if (request.action === 'LOSS_DETECTED') {
         // Check losses and maxGames values
-        browser.storage.sync.get(['losses', 'maxGames'], function(result) {
+        chrome.storage.sync.get(['losses', 'maxGames'], function(result) {
             if ((result.losses + 1) >= result.maxGames) {
                 // Set 'blocked' to true
-                browser.storage.sync.set({
+                chrome.storage.sync.set({
                     blocked: true
                 });
             }
