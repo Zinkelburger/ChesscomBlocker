@@ -7,14 +7,18 @@
         "storage",
         "tabs",
         "https://api.chess.com/*",
-        "*://*.chess.com/*"
+        "https://*.chess.com/game/*",
+        "https://*.chess.com/play/online/*"
     ],
     "background": {
         "scripts": ["background.js"],
         "persistent": true
     },
     "content_scripts": [{
-        "matches": ["*://*.chess.com/*"],
+        "matches": [
+            "https://*.chess.com/game/*",
+            "https://*.chess.com/play/online/*"
+        ],
         "js": ["content.js"]
     }],
     "browser_action": {
