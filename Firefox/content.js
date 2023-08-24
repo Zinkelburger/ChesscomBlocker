@@ -67,8 +67,6 @@ function handleMutations(mutationsList, observer) {
                             browser.runtime.sendMessage({
                                 action: 'LOSS_DETECTED'
                             });
-                            console.log("loss detected");
-                            console.log(ratingChange);
                         }
                         // call the api after 15 seconds
                         setTimeout(function() {
@@ -96,7 +94,6 @@ function startObserving() {
         };
         const observer = new MutationObserver(handleMutations);
         observer.observe(targetNode, config);
-        console.log('Target node found');
     } else {
         console.error('Target node not found');
     }

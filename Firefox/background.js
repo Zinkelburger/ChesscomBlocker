@@ -1,6 +1,5 @@
 // Function to check the chess.com API for the number of games played
 async function checkGamesPlayed() {
-    console.log("check games played");
     // Get the maximum number of games and username from browser storage
     let items = await browser.storage.sync.get({
         maxGames: 5,

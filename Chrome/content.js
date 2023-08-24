@@ -17,7 +17,7 @@ chrome.storage.sync.get({
                 text-shadow: 2px 2px 4px rgba(0,0,0,0.5); 
                 font-family: 'Arial', sans-serif;
                 text-align: center;">
-                Chess.com Blocker: Daily game limit met. Please take a well-deserved break.
+                Chess.com Blocker: Daily game limit reached. Please take a well-deserved break.
             </h1>
         </div>
     </body>
@@ -44,7 +44,7 @@ if (changes.blocked) {
                 text-shadow: 2px 2px 4px rgba(0,0,0,0.5); 
                 font-family: 'Arial', sans-serif;
                 text-align: center;">
-                Chess.com Blocker: Daily game limit met. Please take a well-deserved break.
+                Chess.com Blocker: Daily game limit reached. Please take a well-deserved break.
             </h1>
         </div>
     </body>
