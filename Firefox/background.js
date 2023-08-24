@@ -1,5 +1,6 @@
 // Function to check the chess.com API for the number of games played
 async function checkGamesPlayed() {
+    console.log("check games played");
     // Get the maximum number of games and username from browser storage
     let items = await browser.storage.sync.get({
         maxGames: 5,
@@ -66,13 +67,16 @@ async function checkGamesPlayed() {
 }
 
 // Run checkGamesPlayed when the extension is clicked
-browser.action.onClicked.addListener((tab) => {
+// firefox uses browserAction, chrome uses action
+browser.browserAction.onClicked.addListener((tab) => {
     checkGamesPlayed();
 });
 
-// Run checkGamesPlayed when the current site is chess.com
+// Run checkGamesPlayed when on the game or play pages
 browser.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-    if (changeInfo.url && changeInfo.url.startsWith("https://www.chess.com/")) {
+    const chessPattern = /https?:\/\/.*chess\.com\/(game|play\/online)/;
+
+    if (changeInfo.url && chessPattern.test(changeInfo.url)) {
         checkGamesPlayed();
     }
 });

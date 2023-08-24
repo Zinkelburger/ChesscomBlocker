@@ -6,10 +6,6 @@ function save_options() {
         maxGames: maxGames,
         username: username
     });
-    // query the api
-    browser.runtime.sendMessage({
-        action: "checkGamesPlayed"
-    });
 }
 
 // Add an event listener to the browser.storage.onChanged event
@@ -31,7 +27,7 @@ document.getElementById('options-form').addEventListener('submit', function(even
 
 document.getElementById('options-form').addEventListener('submit', save_options);
 
-// Load options from browser.storage
+// Set the form to values from browser.storage
 browser.storage.sync.get({
     maxGames: 5,
     username: '',

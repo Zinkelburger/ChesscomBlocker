@@ -1,22 +1,23 @@
 {
-    "manifest_version": 3,
+    "manifest_version": 2,
     "name": "Chess.com Blocker",
-    "version": "2.1",
+    "version": "2.1.0.1",
+    "description": "Prevent binging on chess.com. Blocks chess.com if you lose too many games.",
     "permissions": [
-        "storage"
-    ],
-    "host_permissions": [
+        "storage",
+        "tabs",
         "https://api.chess.com/*",
         "*://*.chess.com/*"
     ],
     "background": {
-        "scripts": ["background.js"]
+        "scripts": ["background.js"],
+        "persistent": true
     },
     "content_scripts": [{
-        "matches": ["https://www.chess.com/*"],
+        "matches": ["*://*.chess.com/*"],
         "js": ["content.js"]
     }],
-    "action": {
+    "browser_action": {
         "default_icon": "knook.png",
         "default_popup": "options.html"
     },
