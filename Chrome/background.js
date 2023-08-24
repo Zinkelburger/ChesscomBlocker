@@ -65,11 +65,6 @@ async function checkGamesPlayed() {
     }
 }
 
-// Run checkGamesPlayed when the extension is clicked
-chrome.action.onClicked.addListener((tab) => {
-    checkGamesPlayed();
-});
-
 // Run checkGamesPlayed when the current site is chess.com
 chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     if (changeInfo.url && changeInfo.url.startsWith("https://www.chess.com/")) {
