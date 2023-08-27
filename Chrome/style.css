@@ -1,9 +1,58 @@
+:root {
+    --text: #0f280b;
+    --background: #edfaeb;
+    --primary: #7bb28f;
+    --secondary: #d2e5e2;
+    --accent: #57948c;
+    font-size: 16px;
+}
 body {
     font-family: "Segoe UI", "Lucida Grande", Tahoma, Arial, sans-serif;
     font-size: 100%;
+    background-color: var(--background);
+    color: var(--text);
 }
-
 h1 {
     margin-top: 0px;
     text-align: center;
+    color: var(--text);
+}
+form {
+    background-color: var(--background);
+}
+input[type="text"], input[type="number"] {
+    background-color: var(--secondary);
+    color: var(--text);
+    border-radius: 5px;
+    border: 1px solid var(--primary);
+    box-shadow: 0px 0px 5px rgba(0,0,0,0.1);
+    margin-top: 3px;
+}
+input[type="text"]:focus, input[type="number"]:focus {
+    outline: none;
+    border-color: var(--accent);
+    border-width: 2px;
+}
+input[type="submit"] {
+    background-color: var(--primary);
+    color: var(--text);
+    border: none;
+    border-radius: 8px;
+    text-align: center;
+    text-decoration: none;
+    display: inline-block;
+    font-size: 18px;
+    padding: 0.35em 1.3em;
+    transition-duration: 0.4s;
+    cursor: pointer;
+    display: block;
+    margin-left: auto;
+    margin-right: auto;
+    margin-top: 10px;
+}
+input[type="submit"]:hover {
+    opacity: 0.8;
+}
+p {
+    margin-top: 10px;
 }

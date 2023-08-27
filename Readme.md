@@ -2,6 +2,12 @@
 
 A Chrome and Firefox extension that calculates a player's number of losses in the past day on chess.com. If this is greater than the maxGames number input by the user, the [chess.com/play/online](chess.com/play/online) page is blocked.
 
+## Links to download
+
+https://chrome.google.com/webstore/detail/chesscom-blocker/pacoipifgdogfclpkfmjomngfleabgfn/
+
+https://addons.mozilla.org/en-US/firefox/addon/chess-com-blocker/
+
 ## Installation
 **Chrome**
 
