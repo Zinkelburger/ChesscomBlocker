@@ -31,8 +31,10 @@ async function checkGamesPlayed() {
 
     // Check to make sure data.games exists
     if (!data.games || !Array.isArray(data.games) || !data.games.length) {
-        let losses = 0;
-        await chrome.storage.sync.set({ blocked: losses >= maxGames });
+        await chrome.storage.sync.set({
+            losses: 0,
+            blocked: 0 >= maxGames
+        });
         return;
     }
 
