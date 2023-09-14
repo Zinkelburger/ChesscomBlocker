@@ -24,7 +24,7 @@ input[type="text"], input[type="number"] {
     background-color: var(--secondary);
     color: var(--text);
     border-radius: 5px;
-    border: 1px solid var(--primary);
+    border: 2px solid var(--primary);
     box-shadow: 0px 0px 5px rgba(0,0,0,0.1);
     margin-top: 3px;
 }
@@ -33,26 +33,7 @@ input[type="text"]:focus, input[type="number"]:focus {
     border-color: var(--accent);
     border-width: 2px;
 }
-input[type="submit"] {
-    background-color: var(--primary);
-    color: var(--text);
-    border: none;
-    border-radius: 8px;
-    text-align: center;
-    text-decoration: none;
-    display: inline-block;
-    font-size: 18px;
-    padding: 0.35em 1.3em;
-    transition-duration: 0.4s;
-    cursor: pointer;
-    display: block;
-    margin-left: auto;
-    margin-right: auto;
-    margin-top: 10px;
-}
-input[type="submit"]:hover {
-    opacity: 0.8;
-}
+
 p {
     margin-top: 10px;
 }

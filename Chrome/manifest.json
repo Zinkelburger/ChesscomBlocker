@@ -1,7 +1,7 @@
 {
     "manifest_version": 3,
     "name": "Chess.com Blocker",
-    "version": "1.0.0.3",
+    "version": "1.0.0.4",
     "description": "Prevent binging on chess.com. Blocks chess.com if you lose too many games.",
     "permissions": [
         "storage"

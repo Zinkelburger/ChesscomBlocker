@@ -1,3 +1,17 @@
+function debounce(func, wait) {
+    let timeout;
+
+    return function executedFunction(...args) {
+        const later = () => {
+            clearTimeout(timeout);
+            func(...args);
+        };
+
+        clearTimeout(timeout);
+        timeout = setTimeout(later, wait);
+    };
+}
+
 // Save options to chrome.storage
 function save_options() {
     let maxGames = document.getElementById('max-games').value;
@@ -12,7 +26,7 @@ function save_options() {
     });
 }
 
-// Add an event listener to the chrome.storage.onChanged event
+// Listen for changes to the num-losses
 chrome.storage.onChanged.addListener(function(changes, namespace) {
     // Check if the "losses" value has changed
     if (changes.losses) {
@@ -21,15 +35,16 @@ chrome.storage.onChanged.addListener(function(changes, namespace) {
     }
 });
 
-document.getElementById('options-form').addEventListener('submit', function(event) {
-    event.preventDefault();
-    save_options();
-    chrome.runtime.sendMessage({
-        action: 'checkGamesPlayed'
-    });
+let debouncedSave = debounce(function() {
+        save_options();
+}, 1000);
+
+window.addEventListener('beforeunload', function() {
+        save_options();
 });
 
-document.getElementById('options-form').addEventListener('submit', save_options);
+document.getElementById('max-games').addEventListener('input', debouncedSave);
+document.getElementById('username').addEventListener('input', debouncedSave);
 
 // Load options from chrome.storage
 chrome.storage.sync.get({

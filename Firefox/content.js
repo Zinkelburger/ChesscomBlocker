@@ -1,4 +1,6 @@
-// Check the current value of "blocked" in browser.storage when the content script is first injected into the page
+// Update and check the "blocked" value when the script is injected into the page
+browser.runtime.sendMessage({action: 'checkGamesPlayed'});
+
 browser.storage.sync.get({
         blocked: false
     }, function(items) {
@@ -24,7 +26,7 @@ browser.storage.sync.get({
         `;
     
         }
-    });
+});
     
 // Listen for changes to the "blocked" value in browser.storage
 browser.storage.onChanged.addListener(function(changes, namespace) {
@@ -54,7 +56,8 @@ browser.storage.onChanged.addListener(function(changes, namespace) {
     }
 });
 
-// Function to handle mutations
+// Sees if the game ends. If the rating change is less than -4, it is counted as a loss.
+// This is important because the API does not update fast enough to prevent binging.
 function handleMutations(mutationsList, observer) {
     for (let mutation of mutationsList) {
         if (mutation.type === 'childList') {
@@ -81,7 +84,6 @@ function handleMutations(mutationsList, observer) {
     }
 }
 
-// Start observing the DOM
 function startObserving() {
     // Target the player-bottom component
     const targetNode = document.querySelector('.player-component.player-bottom');
