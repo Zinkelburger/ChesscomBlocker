@@ -29,6 +29,13 @@ async function checkGamesPlayed() {
     let response = await fetch(url);
     let data = await response.json();
 
+    // Check to make sure data.games exists
+    if (!data.games || !Array.isArray(data.games) || !data.games.length) {
+        losses = 0;
+        await browser.storage.sync.set({ blocked: losses >= maxGames });
+        return;
+    }
+
     // Initialize a counter for the number of losses
     let losses = 0;
 
