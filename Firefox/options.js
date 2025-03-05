@@ -44,7 +44,9 @@ window.addEventListener('beforeunload', function() {
 });
 
 document.getElementById('max-games').addEventListener('input', debouncedSave);
+document.getElementById('max-games').addEventListener('change', debouncedSave);
 document.getElementById('username').addEventListener('input', debouncedSave);
+document.getElementById('username').addEventListener('change', debouncedSave);
 
 // Set the form to values from browser.storage
 browser.storage.sync.get({
