@@ -11,17 +11,9 @@ async function checkGamesPlayed() {
     // Get the current year and month
     let date = new Date();
     let year = date.getFullYear();
+    // Always use the current month; pad with '0' if needed
     let month = (date.getMonth() + 1).toString().padStart(2, '0');
 
-    // Account for the edge case where it is the first of the month
-    if (date.getDate() === 1) {
-        month--;
-        // first of the year
-        if (month === 0) {
-            month = 12;
-            year--;
-        }
-    }
     // Construct the URL for the API request
     let url = `https://api.chess.com/pub/player/${username}/games/${year}/${month}`;
 
@@ -94,6 +86,5 @@ chrome.runtime.onMessage.addListener(function(request, sender, sendResponse) {
                 });
             }
         });
-
     }
 });
