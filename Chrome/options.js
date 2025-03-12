@@ -1,59 +1,34 @@
-function debounce(func, wait) {
-    let timeout;
-
-    return function executedFunction(...args) {
-        const later = () => {
-            clearTimeout(timeout);
-            func(...args);
-        };
-
-        clearTimeout(timeout);
-        timeout = setTimeout(later, wait);
-    };
-}
-
 // Save options to chrome.storage
 function save_options() {
     let maxGames = document.getElementById('max-games').value;
     let username = document.getElementById('username').value;
+    
     chrome.storage.sync.set({
         maxGames: maxGames,
         username: username
-    });
-    // query the api
-    chrome.runtime.sendMessage({
-        action: "checkGamesPlayed"
+    }, () => {
+        // Once saved, request an updated check
+        chrome.runtime.sendMessage({ action: 'checkGamesPlayed' });
     });
 }
 
-// Listen for changes to the num-losses
-chrome.storage.onChanged.addListener(function(changes, namespace) {
-    // Check if the "losses" value has changed
+// Listen for changes to "losses" in storage and update the page
+chrome.storage.onChanged.addListener((changes, namespace) => {
     if (changes.losses) {
-        // If so, update the number of losses displayed on the page
         document.getElementById('num-losses').textContent = changes.losses.newValue;
     }
 });
 
-let debouncedSave = debounce(function() {
-        save_options();
-}, 1000);
+// Attach 'change' event listeners to inputs
+document.getElementById('max-games').addEventListener('change', save_options);
+document.getElementById('username').addEventListener('change', save_options);
 
-window.addEventListener('beforeunload', function() {
-        save_options();
-});
-
-document.getElementById('max-games').addEventListener('input', debouncedSave);
-document.getElementById('max-games').addEventListener('change', debouncedSave);
-document.getElementById('username').addEventListener('input', debouncedSave);
-document.getElementById('username').addEventListener('change', debouncedSave);
-
-// Load options from chrome.storage
+// On page load, populate the fields from chrome.storage
 chrome.storage.sync.get({
     maxGames: 5,
     username: '',
     losses: 0
-}, function(items) {
+}, (items) => {
     document.getElementById('max-games').value = items.maxGames;
     document.getElementById('username').value = items.username;
     document.getElementById('num-losses').textContent = items.losses;

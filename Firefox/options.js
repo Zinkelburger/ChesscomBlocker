@@ -1,60 +1,34 @@
-function debounce(func, wait) {
-    let timeout;
-
-    return function executedFunction(...args) {
-        const later = () => {
-            clearTimeout(timeout);
-            func(...args);
-        };
-
-        clearTimeout(timeout);
-        timeout = setTimeout(later, wait);
-    };
-}
-
 // Save options to browser.storage
 function save_options() {
-    let maxGames = document.getElementById('max-games').value;
-    let username = document.getElementById('username').value;
-    browser.storage.sync.set({
-        maxGames: maxGames,
-        username: username
+    const maxGames = document.getElementById('max-games').value;
+    const username = document.getElementById('username').value;
+    
+    // In Firefox, browser.storage.sync.set returns a Promise
+    browser.storage.sync.set({ 
+      maxGames, 
+      username 
+    }).then(() => {
+      // Once saved, re-check games played
+      browser.runtime.sendMessage({ action: 'checkGamesPlayed' });
     });
-    // query the api
-    browser.runtime.sendMessage({
-        action: "checkGamesPlayed"
-    });
-}
-
-// Listen for changes to the num-losses
-browser.storage.onChanged.addListener(function(changes, namespace) {
-    // Check if the "losses" value has changed
+  }
+  
+  // Listen for changes to "losses" in storage
+  browser.storage.onChanged.addListener((changes, namespace) => {
     if (changes.losses) {
-        // If so, update the number of losses displayed on the page
-        document.getElementById('num-losses').textContent = changes.losses.newValue;
+      document.getElementById('num-losses').textContent = changes.losses.newValue;
     }
-});
-
-let debouncedSave = debounce(function() {
-    save_options();
-}, 1000);
-
-window.addEventListener('beforeunload', function() {
-    save_options();
-});
-
-document.getElementById('max-games').addEventListener('input', debouncedSave);
-document.getElementById('max-games').addEventListener('change', debouncedSave);
-document.getElementById('username').addEventListener('input', debouncedSave);
-document.getElementById('username').addEventListener('change', debouncedSave);
-
-// Set the form to values from browser.storage
-browser.storage.sync.get({
-    maxGames: 5,
-    username: '',
-    losses: 0
-}, function(items) {
-    document.getElementById('max-games').value = items.maxGames;
-    document.getElementById('username').value = items.username;
-    document.getElementById('num-losses').textContent = items.losses;
-});
+  });
+  
+  // Attach 'change' event listeners to inputs
+  document.getElementById('max-games').addEventListener('change', save_options);
+  document.getElementById('username').addEventListener('change', save_options);
+  
+  // On page load, populate fields from browser.storage
+  browser.storage.sync.get({ maxGames: 5, username: '', losses: 0 })
+    .then(items => {
+      document.getElementById('max-games').value = items.maxGames;
+      document.getElementById('username').value = items.username;
+      document.getElementById('num-losses').textContent = items.losses;
+    });
+  
