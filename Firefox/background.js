@@ -1,12 +1,43 @@
+// Session-only disable flag (resets on browser restart since background is persistent)
+let sessionDisabled = false;
+
+// Default filters - standard time controls, standard chess
+const DEFAULT_FILTERS = {
+    bullet: true,
+    blitz: true,
+    rapid: true,
+    daily: false,
+    chess: true,
+    chess960: false,
+    bughouse: false,
+    crazyhouse: false,
+    threecheck: false,
+    kingofthehill: false
+};
+
+// Check if a game matches the active filters
+function gameMatchesFilters(game, filters) {
+    const timeClass = game.time_class || 'unknown';
+    const rules = game.rules || 'chess';
+    
+    // Game must match an enabled time control AND an enabled variant
+    const timeEnabled = filters[timeClass] === true;
+    const rulesEnabled = filters[rules] === true;
+    
+    return timeEnabled && rulesEnabled;
+}
+
 // Function to check the chess.com API for the number of games played
 async function checkGamesPlayed() {
-    // Get the maximum number of games and username from browser storage
+    // Get the maximum number of games, username, and filters from browser storage
     let items = await browser.storage.sync.get({
         maxGames: 5,
-        username: ''
+        username: '',
+        gameFilters: DEFAULT_FILTERS
     });
     let maxGames = items.maxGames;
     let username = items.username.toLowerCase();
+    let filters = { ...DEFAULT_FILTERS, ...items.gameFilters };
 
     if (!username) {
         return; // No username configured, nothing to check
@@ -84,7 +115,7 @@ async function checkGamesPlayed() {
     if (!data.games || !Array.isArray(data.games) || !data.games.length) {
         await browser.storage.sync.set({
             losses: 0,
-            blocked: 0 >= maxGames
+            blocked: sessionDisabled ? false : (0 >= maxGames)
         });
         return;
     }
@@ -99,18 +130,23 @@ async function checkGamesPlayed() {
     // Iterate over the games, back to front, stop when we get more than 24 hours away
     do {
         game = data.games[i];
-        if (game.white.username.toLowerCase() === username && game.black.result === 'win') {
-            losses++;
-        } else if (game.black.username.toLowerCase() === username && game.white.result === 'win') {
-            losses++;
+        
+        // Only count games that match our filters
+        if (gameMatchesFilters(game, filters)) {
+            if (game.white.username.toLowerCase() === username && game.black.result === 'win') {
+                losses++;
+            } else if (game.black.username.toLowerCase() === username && game.white.result === 'win') {
+                losses++;
+            }
         }
         i--;
     } while (now - game.end_time <= 86400 && i >= 0);
 
     // Update the number of losses in browser.storage
+    // If session is disabled, never block
     await browser.storage.sync.set({
         losses: losses,
-        blocked: losses >= maxGames
+        blocked: sessionDisabled ? false : (losses >= maxGames)
     });
 }
 
@@ -133,15 +169,24 @@ browser.runtime.onMessage.addListener(function(request, sender, sendResponse) {
     if (request.action === 'checkGamesPlayed') {
         checkGamesPlayed();
     } else if (request.action === 'LOSS_DETECTED') {
+        // Don't block if session is disabled
+        if (sessionDisabled) {
+            return;
+        }
         // Check losses and maxGames values
-        browser.storage.sync.get(['losses', 'maxGames'], function(result) {
+        browser.storage.sync.get(['losses', 'maxGames']).then(function(result) {
             if ((result.losses + 1) >= result.maxGames) {
-                // Set 'blocked' to true
-                browser.storage.sync.set({
-                    blocked: true
-                });
+                browser.storage.sync.set({ blocked: true });
             }
         });
-
+    } else if (request.action === 'SET_SESSION_DISABLED') {
+        // Toggle session disable state
+        sessionDisabled = request.value;
+        sendResponse({ sessionDisabled: sessionDisabled });
+        checkGamesPlayed();
+    } else if (request.action === 'GET_SESSION_DISABLED') {
+        // Return current session disable state
+        sendResponse({ sessionDisabled: sessionDisabled });
     }
+    return true; // Keep message channel open for async response
 });

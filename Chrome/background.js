@@ -1,12 +1,40 @@
+// Default filters - standard time controls, standard chess
+const DEFAULT_FILTERS = {
+    bullet: true,
+    blitz: true,
+    rapid: true,
+    daily: false,
+    chess: true,
+    chess960: false,
+    bughouse: false,
+    crazyhouse: false,
+    threecheck: false,
+    kingofthehill: false
+};
+
+// Check if a game matches the active filters
+function gameMatchesFilters(game, filters) {
+    const timeClass = game.time_class || 'unknown';
+    const rules = game.rules || 'chess';
+    
+    // Game must match an enabled time control AND an enabled variant
+    const timeEnabled = filters[timeClass] === true;
+    const rulesEnabled = filters[rules] === true;
+    
+    return timeEnabled && rulesEnabled;
+}
+
 // Function to check the chess.com API for the number of games played
 async function checkGamesPlayed() {
-    // Get the maximum number of games and username from chrome storage
+    // Get the maximum number of games, username, and filters from chrome storage
     let items = await chrome.storage.sync.get({
         maxGames: 5,
-        username: ''
+        username: '',
+        gameFilters: DEFAULT_FILTERS
     });
     let maxGames = items.maxGames;
     let username = items.username.toLowerCase();
+    let filters = { ...DEFAULT_FILTERS, ...items.gameFilters };
 
     if (!username) {
         return; // No username configured, nothing to check
@@ -81,11 +109,14 @@ async function checkGamesPlayed() {
         }
     }
 
+    // Check if session is disabled (need this early for empty games case too)
+    let session = await chrome.storage.session.get({ sessionDisabled: false });
+
     // Check to make sure data.games exists
     if (!data.games || !Array.isArray(data.games) || !data.games.length) {
         await chrome.storage.sync.set({
             losses: 0,
-            blocked: 0 >= maxGames
+            blocked: session.sessionDisabled ? false : (0 >= maxGames)
         });
         return;
     }
@@ -100,18 +131,23 @@ async function checkGamesPlayed() {
     // Iterate over the games, back to front, stop when we get more than 24 hours away
     do {
         game = data.games[i];
-        if (game.white.username.toLowerCase() === username && game.black.result === 'win') {
-            losses++;
-        } else if (game.black.username.toLowerCase() === username && game.white.result === 'win') {
-            losses++;
+        
+        // Only count games that match our filters
+        if (gameMatchesFilters(game, filters)) {
+            if (game.white.username.toLowerCase() === username && game.black.result === 'win') {
+                losses++;
+            } else if (game.black.username.toLowerCase() === username && game.white.result === 'win') {
+                losses++;
+            }
         }
         i--;
     } while (now - game.end_time <= 86400 && i >= 0);
 
     // Update the number of losses in chrome.storage
+    // If session is disabled, never block
     await chrome.storage.sync.set({
         losses: losses,
-        blocked: losses >= maxGames
+        blocked: session.sessionDisabled ? false : (losses >= maxGames)
     });
 }
 
@@ -126,13 +162,17 @@ chrome.runtime.onMessage.addListener(function(request, sender, sendResponse) {
     if (request.action === 'checkGamesPlayed') {
         checkGamesPlayed();
     } else if (request.action === 'LOSS_DETECTED') {
-        // Check losses and maxGames values
-        chrome.storage.sync.get(['losses', 'maxGames'], function(result) {
-            if ((result.losses + 1) >= result.maxGames) {
-                // Set 'blocked' to true
-                chrome.storage.sync.set({
-                    blocked: true
-                });
+        // Check losses, maxGames, and session disabled state
+        Promise.all([
+            chrome.storage.sync.get(['losses', 'maxGames']),
+            chrome.storage.session.get({ sessionDisabled: false })
+        ]).then(([syncResult, sessionResult]) => {
+            // Don't block if session is disabled
+            if (sessionResult.sessionDisabled) {
+                return;
+            }
+            if ((syncResult.losses + 1) >= syncResult.maxGames) {
+                chrome.storage.sync.set({ blocked: true });
             }
         });
     }
