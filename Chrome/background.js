@@ -8,6 +8,10 @@ async function checkGamesPlayed() {
     let maxGames = items.maxGames;
     let username = items.username.toLowerCase();
 
+    if (!username) {
+        return; // No username configured, nothing to check
+    }
+
     // Get the current year and month
     let date = new Date();
     let year = date.getFullYear();
@@ -17,9 +21,65 @@ async function checkGamesPlayed() {
     // Construct the URL for the API request
     let url = `https://api.chess.com/pub/player/${username}/games/${year}/${month}`;
 
-    // Fetch data from the chess.com API
-    let response = await fetch(url);
-    let data = await response.json();
+    // Get cached ETag and games from local storage
+    let cache = await chrome.storage.local.get({
+        cachedEtag: null,
+        cachedGames: null,
+        cacheUrl: null
+    });
+
+    let data;
+
+    try {
+        // Build fetch options with ETag if we have one for this URL
+        let fetchOptions = {};
+        if (cache.cachedEtag && cache.cacheUrl === url) {
+            fetchOptions.headers = { 'If-None-Match': cache.cachedEtag };
+        }
+
+        let response = await fetch(url, fetchOptions);
+
+        if (response.status === 304) {
+            // Data unchanged, use cached games
+            data = { games: cache.cachedGames };
+        } else if (response.ok) {
+            data = await response.json();
+            // Cache the new ETag and games
+            let newEtag = response.headers.get('ETag');
+            await chrome.storage.local.set({
+                cachedEtag: newEtag,
+                cachedGames: data.games || [],
+                cacheUrl: url
+            });
+        } else if (response.status === 404) {
+            // User not found or no games this month
+            data = { games: [] };
+        } else if (response.status === 429) {
+            // Rate limited - use cached data if available, otherwise bail
+            console.warn('Chess.com API rate limited (429). Using cached data if available.');
+            if (cache.cachedGames) {
+                data = { games: cache.cachedGames };
+            } else {
+                return; // No cached data, can't proceed
+            }
+        } else {
+            console.error(`Chess.com API error: ${response.status} ${response.statusText}`);
+            // Use cached data as fallback
+            if (cache.cachedGames) {
+                data = { games: cache.cachedGames };
+            } else {
+                return;
+            }
+        }
+    } catch (error) {
+        console.error('Failed to fetch from Chess.com API:', error);
+        // Network error - use cached data if available
+        if (cache.cachedGames) {
+            data = { games: cache.cachedGames };
+        } else {
+            return;
+        }
+    }
 
     // Check to make sure data.games exists
     if (!data.games || !Array.isArray(data.games) || !data.games.length) {
@@ -50,20 +110,9 @@ async function checkGamesPlayed() {
 
     // Update the number of losses in chrome.storage
     await chrome.storage.sync.set({
-        losses: losses
+        losses: losses,
+        blocked: losses >= maxGames
     });
-
-    // Check if the user has exceeded the maximum number of losses allowed
-    if (losses >= maxGames) {
-        // Set blocked to true in chrome.storage
-        await chrome.storage.sync.set({
-            blocked: true
-        });
-    } else {
-        await chrome.storage.sync.set({
-            blocked: false
-        });
-    }
 }
 
 // Run checkGamesPlayed when the current site is chess.com
