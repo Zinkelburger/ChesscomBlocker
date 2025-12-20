@@ -1,0 +1,143 @@
+{
+  "games": [
+    {
+      "url": "https://www.chess.com/game/live/146279533186",
+      "pgn": "[trimmed for test]",
+      "time_control": "180+2",
+      "end_time": 1764798533,
+      "rated": true,
+      "uuid": "f60b29c9-d090-11f0-bd90-7bfcd201000f",
+      "initial_setup": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+      "fen": "r5k1/5pbp/6p1/pp1p4/1P1PN1P1/q3PN1P/5R2/2rQ2K1 w - - 0 27",
+      "time_class": "blitz",
+      "rules": "chess",
+      "white": {
+        "rating": 2149,
+        "result": "resigned",
+        "@id": "https://api.chess.com/pub/player/capablanqino",
+        "username": "capablanqino",
+        "uuid": "c62992ee-6fe6-11f0-adff-dba5de5924aa"
+      },
+      "black": {
+        "rating": 2166,
+        "result": "win",
+        "@id": "https://api.chess.com/pub/player/bigmanarkhangelsk",
+        "username": "BigManArkhangelsk",
+        "uuid": "9690f8e0-8295-11e5-8004-000000000000"
+      },
+      "eco": "https://www.chess.com/openings/Alapin-Sicilian-Defense...6.cxd4-d6-7.exd6-Qxd6"
+    },
+    {
+      "url": "https://www.chess.com/game/live/146279721032",
+      "pgn": "[trimmed for test]",
+      "time_control": "180+2",
+      "end_time": 1764799112,
+      "rated": true,
+      "accuracies": {
+        "white": 80.5,
+        "black": 74.39
+      },
+      "uuid": "e2081086-d091-11f0-8b29-adbd1301000f",
+      "initial_setup": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+      "fen": "8/5p1k/6p1/8/5Q2/7P/6QK/8 b - - 0 55",
+      "time_class": "blitz",
+      "rules": "chess",
+      "white": {
+        "rating": 2178,
+        "result": "win",
+        "@id": "https://api.chess.com/pub/player/nelson2021a",
+        "username": "Nelson2021a",
+        "uuid": "325d8294-4e75-11ee-bf91-37c1898300f0"
+      },
+      "black": {
+        "rating": 2158,
+        "result": "resigned",
+        "@id": "https://api.chess.com/pub/player/bigmanarkhangelsk",
+        "username": "BigManArkhangelsk",
+        "uuid": "9690f8e0-8295-11e5-8004-000000000000"
+      },
+      "eco": "https://www.chess.com/openings/English-Opening-Symmetrical-Two-Knights-Variation...6.exd4-d5-7.cxd5-Nxd5-8.Bc4"
+    },
+    {
+      "url": "https://www.chess.com/game/live/146280000396",
+      "pgn": "[trimmed for test]",
+      "time_control": "180+2",
+      "end_time": 1764799484,
+      "rated": true,
+      "uuid": "4908838d-d093-11f0-b266-cf0e1f01000f",
+      "initial_setup": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+      "fen": "r5k1/pp5N/3qp1p1/3p4/1P1b4/3B1n2/P1P2rPP/1RBQ3K w - - 3 18",
+      "time_class": "blitz",
+      "rules": "chess",
+      "white": {
+        "rating": 2148,
+        "result": "timeout",
+        "@id": "https://api.chess.com/pub/player/bigmanarkhangelsk",
+        "username": "BigManArkhangelsk",
+        "uuid": "9690f8e0-8295-11e5-8004-000000000000"
+      },
+      "black": {
+        "rating": 2088,
+        "result": "win",
+        "@id": "https://api.chess.com/pub/player/roi-reveur",
+        "username": "Roi-Reveur",
+        "uuid": "098e9872-bf42-11f0-ae54-65c12c7e9033"
+      },
+      "eco": "https://www.chess.com/openings/Sicilian-Defense-Nimzowitsch-Advance-Rubinstein-Countergambit-7.dxc5-Bxc5-8.Bd3-d6-9.exd6"
+    },
+    {
+      "url": "https://www.chess.com/game/live/146280169940",
+      "pgn": "[trimmed for test]",
+      "time_control": "180+2",
+      "end_time": 1764799942,
+      "rated": true,
+      "uuid": "298feaa4-d094-11f0-bd90-7bfcd201000f",
+      "initial_setup": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+      "fen": "2b3rk/r2pBQbp/pNp2pp1/4P3/7q/8/PPPR1P1P/2K1R3 b - - 0 26",
+      "time_class": "blitz",
+      "rules": "chess",
+      "white": {
+        "rating": 2156,
+        "result": "win",
+        "@id": "https://api.chess.com/pub/player/bigmanarkhangelsk",
+        "username": "BigManArkhangelsk",
+        "uuid": "9690f8e0-8295-11e5-8004-000000000000"
+      },
+      "black": {
+        "rating": 2161,
+        "result": "timeout",
+        "@id": "https://api.chess.com/pub/player/gm5050",
+        "username": "GM5050",
+        "uuid": "a60999ea-2bb7-11ec-87de-f3e1fce65d26"
+      },
+      "eco": "https://www.chess.com/openings/Sicilian-Defense-Hyperaccelerated-Dragon-Fianchetto-Variation...4.Qxd4-Nf6-5.Nc3-Nc6-6.Qa4"
+    },
+    {
+      "url": "https://www.chess.com/game/live/146280416066",
+      "pgn": "[trimmed for test]",
+      "time_control": "180+2",
+      "end_time": 1764800589,
+      "rated": true,
+      "uuid": "72cfa2bc-d095-11f0-bd90-7bfcd201000f",
+      "initial_setup": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+      "fen": "R7/Rk5b/2p4p/7P/1bP3P1/1P2B2r/5P2/3K4 b - - 6 44",
+      "time_class": "blitz",
+      "rules": "chess",
+      "white": {
+        "rating": 2166,
+        "result": "win",
+        "@id": "https://api.chess.com/pub/player/bobby_luna",
+        "username": "Bobby_Luna",
+        "uuid": "c4ceb4d6-5ff3-11f0-ab3c-5da3c20bc42a"
+      },
+      "black": {
+        "rating": 2148,
+        "result": "checkmated",
+        "@id": "https://api.chess.com/pub/player/bigmanarkhangelsk",
+        "username": "BigManArkhangelsk",
+        "uuid": "9690f8e0-8295-11e5-8004-000000000000"
+      },
+      "eco": "https://www.chess.com/openings/Scotch-Game-Schmidt-Mieses-Variation-6...Qe7-7.Qe2-Nd5-8.h4"
+    }
+  ]
+}

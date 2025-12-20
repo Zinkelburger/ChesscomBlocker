@@ -1,0 +1,12 @@
+{
+  "name": "chesscom-blocker",
+  "version": "1.0.0",
+  "description": "Browser extension to limit chess games after too many losses",
+  "scripts": {
+    "test": "node test/background.test.js"
+  },
+  "keywords": ["chess", "chess.com", "browser-extension"],
+  "license": "MIT",
+  "private": true
+}
+
