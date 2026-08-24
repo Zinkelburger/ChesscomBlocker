@@ -1,40 +1,43 @@
-// Default filters - standard time controls, standard chess
-const DEFAULT_FILTERS = {
-    bullet: true,
-    blitz: true,
-    rapid: true,
-    daily: false,
-    chess: true,
-    chess960: false,
-    bughouse: false,
-    crazyhouse: false,
-    threecheck: false,
-    kingofthehill: false
-};
+// Counting rules live in lossCounter.js so the popup and the tests share them
+importScripts('lossCounter.js');
 
-// Check if a game matches the active filters
-function gameMatchesFilters(game, filters) {
-    const timeClass = game.time_class || 'unknown';
-    const rules = game.rules || 'chess';
-    
-    // Game must match an enabled time control AND an enabled variant
-    const timeEnabled = filters[timeClass] === true;
-    const rulesEnabled = filters[rules] === true;
-    
-    return timeEnabled && rulesEnabled;
+// Alarm that re-checks when the counter is due to clear itself
+const RESET_ALARM = 'reset-window';
+
+// Persist the result of a check and schedule the next automatic re-check
+async function applyResult(losses, nextReset, maxGames, sessionDisabled) {
+    await chrome.storage.sync.set({
+        losses: losses,
+        nextReset: nextReset,
+        blocked: sessionDisabled ? false : (losses >= maxGames)
+    });
+    await scheduleResetAlarm(nextReset);
+}
+
+// Wake up when the window rolls over, so a block lifts without the user
+// having to click anything
+async function scheduleResetAlarm(nextReset) {
+    await chrome.alarms.clear(RESET_ALARM);
+    if (!nextReset) {
+        return;
+    }
+    // Chrome clamps alarms to at least a minute out, so don't ask for less
+    chrome.alarms.create(RESET_ALARM, { when: Math.max(nextReset, Date.now() + 60000) });
 }
 
 // Function to check the chess.com API for the number of games played
 async function checkGamesPlayed() {
-    // Get the maximum number of games, username, and filters from chrome storage
+    // Get the maximum number of games, username, filters, and reset mode from chrome storage
     let items = await chrome.storage.sync.get({
         maxGames: 5,
         username: '',
-        gameFilters: DEFAULT_FILTERS
+        gameFilters: DEFAULT_FILTERS,
+        resetMode: DEFAULT_RESET_MODE
     });
     let maxGames = items.maxGames;
     let username = items.username.toLowerCase();
     let filters = { ...DEFAULT_FILTERS, ...items.gameFilters };
+    let resetMode = items.resetMode;
 
     if (!username) {
         return; // No username configured, nothing to check
@@ -112,43 +115,25 @@ async function checkGamesPlayed() {
     // Check if session is disabled (need this early for empty games case too)
     let session = await chrome.storage.session.get({ sessionDisabled: false });
 
+    let now = date.getTime();
+
     // Check to make sure data.games exists
     if (!data.games || !Array.isArray(data.games) || !data.games.length) {
-        await chrome.storage.sync.set({
-            losses: 0,
-            blocked: session.sessionDisabled ? false : (0 >= maxGames)
-        });
+        await applyResult(0, getNextReset(now, resetMode, null), maxGames, session.sessionDisabled);
         return;
     }
 
-    // Initialize a counter for the number of losses
-    let losses = 0;
-
-    // Get the current Unix timestamp
-    let now = Math.round(new Date().getTime() / 1000);
-    let i = data.games.length - 1;
-    let game;
-    // Iterate over the games, back to front, stop when we get more than 24 hours away
-    do {
-        game = data.games[i];
-        
-        // Only count games that match our filters
-        if (gameMatchesFilters(game, filters)) {
-            if (game.white.username.toLowerCase() === username && game.black.result === 'win') {
-                losses++;
-            } else if (game.black.username.toLowerCase() === username && game.white.result === 'win') {
-                losses++;
-            }
-        }
-        i--;
-    } while (now - game.end_time <= 86400 && i >= 0);
+    let windowStart = getWindowStart(now, resetMode);
+    let { losses, oldestCountedLoss } = countLosses(data.games, username, windowStart, filters);
 
     // Update the number of losses in chrome.storage
     // If session is disabled, never block
-    await chrome.storage.sync.set({
-        losses: losses,
-        blocked: session.sessionDisabled ? false : (losses >= maxGames)
-    });
+    await applyResult(
+        losses,
+        getNextReset(now, resetMode, oldestCountedLoss),
+        maxGames,
+        session.sessionDisabled
+    );
 }
 
 // Run checkGamesPlayed when the current site is chess.com
@@ -157,6 +142,17 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
         checkGamesPlayed();
     }
 });
+
+// The window rolled over (midnight passed, or the oldest loss aged out)
+chrome.alarms.onAlarm.addListener((alarm) => {
+    if (alarm.name === RESET_ALARM) {
+        checkGamesPlayed();
+    }
+});
+
+// Make sure an alarm exists after a browser restart or an update
+chrome.runtime.onStartup.addListener(checkGamesPlayed);
+chrome.runtime.onInstalled.addListener(checkGamesPlayed);
 
 chrome.runtime.onMessage.addListener(function(request, sender, sendResponse) {
     if (request.action === 'checkGamesPlayed') {

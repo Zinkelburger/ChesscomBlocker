@@ -1,5 +1,6 @@
 /**
- * Tests for the loss-counting logic in background.js
+ * Tests for the loss-counting logic in Chrome/lossCounter.js
+ * (Firefox/lossCounter.js is a copy of the same file)
  * Run with: node test/background.test.js
  */
 
@@ -7,70 +8,30 @@ const fs = require('fs');
 const path = require('path');
 const assert = require('assert');
 
+const {
+    DEFAULT_FILTERS,
+    DEFAULT_RESET_MODE,
+    DAY_SECONDS,
+    gameMatchesFilters,
+    getWindowStart,
+    getNextReset,
+    countLosses
+} = require('../Chrome/lossCounter.js');
+
 // Load mock data
 const mockData = JSON.parse(
     fs.readFileSync(path.join(__dirname, 'mock-games-response.json'), 'utf8')
 );
 
-// Default filters (mirrors background.js)
-const DEFAULT_FILTERS = {
-    bullet: true,
-    blitz: true,
-    rapid: true,
-    daily: false,
-    chess: true,
-    chess960: false,
-    bughouse: false,
-    crazyhouse: false,
-    threecheck: false,
-    kingofthehill: false
-};
-
-/**
- * Check if a game matches the active filters.
- * This mirrors the logic in background.js
- */
-function gameMatchesFilters(game, filters) {
-    const timeClass = game.time_class || 'unknown';
-    const rules = game.rules || 'chess';
-    
-    const timeEnabled = filters[timeClass] === true;
-    const rulesEnabled = filters[rules] === true;
-    
-    return timeEnabled && rulesEnabled;
+// The tests below were written against a countLosses that returned a plain
+// number; unwrap the result so they stay readable.
+function lossesIn(games, username, windowStart, filters = DEFAULT_FILTERS) {
+    return countLosses(games, username, windowStart, filters).losses;
 }
 
-/**
- * Counts losses in the last 24 hours for a given username.
- * This mirrors the logic in background.js
- */
-function countLosses(games, username, currentTime, filters = DEFAULT_FILTERS) {
-    const lowerUsername = username.toLowerCase();
-    let losses = 0;
-    
-    // Iterate from end (most recent) to beginning
-    for (let i = games.length - 1; i >= 0; i--) {
-        const game = games[i];
-        
-        // Stop if game is older than 24 hours
-        if (currentTime - game.end_time > 86400) {
-            break;
-        }
-        
-        // Only count games that match filters
-        if (!gameMatchesFilters(game, filters)) {
-            continue;
-        }
-        
-        // Check if this is a loss for our user
-        if (game.white.username.toLowerCase() === lowerUsername && game.black.result === 'win') {
-            losses++;
-        } else if (game.black.username.toLowerCase() === lowerUsername && game.white.result === 'win') {
-            losses++;
-        }
-    }
-    
-    return losses;
+// Convenience: the rolling window that ends at `currentTime` (Unix seconds)
+function rollingWindow(currentTime) {
+    return getWindowStart(currentTime * 1000, 'rolling');
 }
 
 /**
@@ -112,7 +73,7 @@ test('correctly identifies BigManArkhangelsk losses', () => {
     const mostRecentGame = mockData.games[mockData.games.length - 1];
     const currentTime = mostRecentGame.end_time + 100; // Just after most recent game
     
-    const losses = countLosses(mockData.games, 'BigManArkhangelsk', currentTime);
+    const losses = lossesIn(mockData.games, 'BigManArkhangelsk', rollingWindow(currentTime));
     
     // From our mock data:
     // Game 1: Black wins (BigManArkhangelsk) - NOT a loss
@@ -127,9 +88,9 @@ test('username matching is case-insensitive', () => {
     const mostRecentGame = mockData.games[mockData.games.length - 1];
     const currentTime = mostRecentGame.end_time + 100;
     
-    const losses1 = countLosses(mockData.games, 'bigmanarkhangelsk', currentTime);
-    const losses2 = countLosses(mockData.games, 'BIGMANARKHANGELSK', currentTime);
-    const losses3 = countLosses(mockData.games, 'BigManArkhangelsk', currentTime);
+    const losses1 = lossesIn(mockData.games, 'bigmanarkhangelsk', rollingWindow(currentTime));
+    const losses2 = lossesIn(mockData.games, 'BIGMANARKHANGELSK', rollingWindow(currentTime));
+    const losses3 = lossesIn(mockData.games, 'BigManArkhangelsk', rollingWindow(currentTime));
     
     assert.strictEqual(losses1, losses2, 'Lowercase should match');
     assert.strictEqual(losses2, losses3, 'Mixed case should match');
@@ -140,7 +101,7 @@ test('games older than 24 hours are not counted', () => {
     const mostRecentGame = mockData.games[mockData.games.length - 1];
     const currentTime = mostRecentGame.end_time + 86401; // 24 hours + 1 second after last game
     
-    const losses = countLosses(mockData.games, 'BigManArkhangelsk', currentTime);
+    const losses = lossesIn(mockData.games, 'BigManArkhangelsk', rollingWindow(currentTime));
     
     // All games should now be outside the 24-hour window
     assert.strictEqual(losses, 0, 'Should have 0 losses when all games are older than 24h');
@@ -160,12 +121,12 @@ test('partial 24-hour window counts correctly', () => {
     // Only games 4 and 5 should be in window
     // Game 4: White wins (BigManArkhangelsk) - NOT a loss
     // Game 5: White wins (Bobby_Luna), Black is BigManArkhangelsk - LOSS
-    const losses = countLosses(mockData.games, 'BigManArkhangelsk', currentTime);
+    const losses = lossesIn(mockData.games, 'BigManArkhangelsk', rollingWindow(currentTime));
     assert.strictEqual(losses, 1, `Expected 1 loss in partial window, got ${losses}`);
 });
 
 test('returns 0 losses for empty games array', () => {
-    const losses = countLosses([], 'BigManArkhangelsk', Date.now());
+    const losses = lossesIn([], 'BigManArkhangelsk', rollingWindow(Math.round(Date.now() / 1000)));
     assert.strictEqual(losses, 0, 'Empty games should have 0 losses');
 });
 
@@ -173,7 +134,7 @@ test('returns 0 losses for unknown user', () => {
     const mostRecentGame = mockData.games[mockData.games.length - 1];
     const currentTime = mostRecentGame.end_time + 100;
     
-    const losses = countLosses(mockData.games, 'unknownuser12345', currentTime);
+    const losses = lossesIn(mockData.games, 'unknownuser12345', rollingWindow(currentTime));
     assert.strictEqual(losses, 0, 'Unknown user should have 0 losses');
 });
 
@@ -221,7 +182,7 @@ test('countLosses respects filters', () => {
     
     // All mock games are blitz chess, so disabling blitz should yield 0 losses
     const noBlitzFilters = { ...DEFAULT_FILTERS, blitz: false };
-    const losses = countLosses(mockData.games, 'BigManArkhangelsk', currentTime, noBlitzFilters);
+    const losses = lossesIn(mockData.games, 'BigManArkhangelsk', rollingWindow(currentTime), noBlitzFilters);
     assert.strictEqual(losses, 0, 'Disabling blitz should exclude all blitz games');
 });
 
@@ -230,8 +191,161 @@ test('countLosses with all filters enabled counts all losses', () => {
     const currentTime = mostRecentGame.end_time + 100;
     
     // With default filters (blitz + chess enabled), should get 3 losses
-    const losses = countLosses(mockData.games, 'BigManArkhangelsk', currentTime, DEFAULT_FILTERS);
+    const losses = lossesIn(mockData.games, 'BigManArkhangelsk', rollingWindow(currentTime), DEFAULT_FILTERS);
     assert.strictEqual(losses, 3, 'Default filters should count all blitz chess losses');
+});
+
+// ============ RESET MODE TESTS ============
+//
+// These build Date objects with the local-time constructor, so they assert the
+// same thing no matter what timezone the machine running them is set to.
+
+console.log('\n--- Reset Mode Tests ---\n');
+
+const seconds = (date) => Math.floor(date.getTime() / 1000);
+
+// A finished blitz game that `username` lost
+function lostGameAt(date, username = 'me') {
+    return {
+        end_time: seconds(date),
+        time_class: 'blitz',
+        rules: 'chess',
+        white: { username: 'opponent', result: 'win' },
+        black: { username, result: 'checkmated' }
+    };
+}
+
+test('default reset mode is the original rolling window', () => {
+    assert.strictEqual(DEFAULT_RESET_MODE, 'rolling');
+});
+
+test('midnight window starts at local midnight of the same day', () => {
+    const now = new Date(2024, 4, 15, 10, 30, 0, 0);
+    const expected = seconds(new Date(2024, 4, 15, 0, 0, 0, 0));
+
+    assert.strictEqual(getWindowStart(now.getTime(), 'midnight'), expected);
+});
+
+test('midnight window start is midnight even just before midnight', () => {
+    const now = new Date(2024, 4, 15, 23, 59, 59, 0);
+    const expected = seconds(new Date(2024, 4, 15, 0, 0, 0, 0));
+
+    assert.strictEqual(getWindowStart(now.getTime(), 'midnight'), expected);
+});
+
+test('rolling window start is exactly 24 hours back', () => {
+    const now = new Date(2024, 4, 15, 10, 30, 0, 0);
+    const expected = seconds(now) - DAY_SECONDS;
+
+    assert.strictEqual(getWindowStart(now.getTime(), 'rolling'), expected);
+});
+
+test('midnight mode drops yesterday evening, rolling mode keeps it', () => {
+    const now = new Date(2024, 4, 15, 10, 30, 0, 0);
+    const games = [
+        lostGameAt(new Date(2024, 4, 14, 23, 30, 0, 0)),
+        lostGameAt(new Date(2024, 4, 15, 0, 30, 0, 0)),
+        lostGameAt(new Date(2024, 4, 15, 9, 0, 0, 0))
+    ];
+
+    const midnight = countLosses(games, 'me', getWindowStart(now.getTime(), 'midnight'));
+    const rolling = countLosses(games, 'me', getWindowStart(now.getTime(), 'rolling'));
+
+    assert.strictEqual(midnight.losses, 2, 'midnight mode counts only today');
+    assert.strictEqual(rolling.losses, 3, 'rolling mode still reaches back into yesterday');
+});
+
+test('a game exactly on the window boundary is counted', () => {
+    const now = new Date(2024, 4, 15, 10, 30, 0, 0);
+    const windowStart = getWindowStart(now.getTime(), 'rolling');
+    const onBoundary = [{
+        end_time: windowStart,
+        time_class: 'blitz',
+        rules: 'chess',
+        white: { username: 'opponent', result: 'win' },
+        black: { username: 'me', result: 'checkmated' }
+    }];
+
+    assert.strictEqual(countLosses(onBoundary, 'me', windowStart).losses, 1);
+});
+
+test('a game one second before the window is not counted', () => {
+    const now = new Date(2024, 4, 15, 10, 30, 0, 0);
+    const windowStart = getWindowStart(now.getTime(), 'rolling');
+    const justOutside = [{
+        end_time: windowStart - 1,
+        time_class: 'blitz',
+        rules: 'chess',
+        white: { username: 'opponent', result: 'win' },
+        black: { username: 'me', result: 'checkmated' }
+    }];
+
+    assert.strictEqual(countLosses(justOutside, 'me', windowStart).losses, 0);
+});
+
+test('countLosses reports the oldest loss still inside the window', () => {
+    const now = new Date(2024, 4, 15, 10, 30, 0, 0);
+    const oldest = new Date(2024, 4, 15, 0, 30, 0, 0);
+    const games = [
+        lostGameAt(new Date(2024, 4, 14, 23, 30, 0, 0)),
+        lostGameAt(oldest),
+        lostGameAt(new Date(2024, 4, 15, 9, 0, 0, 0))
+    ];
+
+    const result = countLosses(games, 'me', getWindowStart(now.getTime(), 'midnight'));
+    assert.strictEqual(result.oldestCountedLoss, seconds(oldest));
+});
+
+test('oldestCountedLoss is null when nothing is counted', () => {
+    const now = new Date(2024, 4, 15, 10, 30, 0, 0);
+    const games = [lostGameAt(new Date(2024, 4, 14, 23, 30, 0, 0))];
+
+    const result = countLosses(games, 'me', getWindowStart(now.getTime(), 'midnight'));
+    assert.strictEqual(result.oldestCountedLoss, null);
+});
+
+test('next reset in midnight mode is the upcoming local midnight', () => {
+    const now = new Date(2024, 4, 15, 10, 30, 0, 0);
+    const expected = new Date(2024, 4, 16, 0, 0, 0, 0).getTime();
+
+    assert.strictEqual(getNextReset(now.getTime(), 'midnight', null), expected);
+});
+
+test('next reset in midnight mode ignores the oldest loss', () => {
+    const now = new Date(2024, 4, 15, 10, 30, 0, 0);
+    const oldest = seconds(new Date(2024, 4, 15, 0, 30, 0, 0));
+    const expected = new Date(2024, 4, 16, 0, 0, 0, 0).getTime();
+
+    assert.strictEqual(getNextReset(now.getTime(), 'midnight', oldest), expected);
+});
+
+test('next reset in rolling mode is when the oldest loss ages out', () => {
+    const now = new Date(2024, 4, 15, 10, 30, 0, 0);
+    const oldest = seconds(new Date(2024, 4, 15, 0, 30, 0, 0));
+
+    assert.strictEqual(
+        getNextReset(now.getTime(), 'rolling', oldest),
+        (oldest + DAY_SECONDS + 1) * 1000
+    );
+});
+
+test('next reset in rolling mode is null with no counted losses', () => {
+    const now = new Date(2024, 4, 15, 10, 30, 0, 0);
+
+    assert.strictEqual(getNextReset(now.getTime(), 'rolling', null), null);
+});
+
+test('midnight mode still respects game filters', () => {
+    const now = new Date(2024, 4, 15, 10, 30, 0, 0);
+    const dailyLoss = lostGameAt(new Date(2024, 4, 15, 9, 0, 0, 0));
+    dailyLoss.time_class = 'daily';
+
+    const windowStart = getWindowStart(now.getTime(), 'midnight');
+    assert.strictEqual(countLosses([dailyLoss], 'me', windowStart).losses, 0,
+        'daily is off by default');
+    assert.strictEqual(
+        countLosses([dailyLoss], 'me', windowStart, { ...DEFAULT_FILTERS, daily: true }).losses, 1,
+        'counted once daily is enabled');
 });
 
 // ============ SUMMARY ============
