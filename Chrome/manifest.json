@@ -4,7 +4,8 @@
     "version": "1.0.0.5",
     "description": "Prevent binging on chess.com. Blocks chess.com if you lose too many games.",
     "permissions": [
-        "storage"
+        "storage",
+        "alarms"
     ],
     "host_permissions": [
         "https://api.chess.com/*",

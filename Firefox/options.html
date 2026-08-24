@@ -40,6 +40,7 @@
             <input type="text" id="username" name="username"><br>
         </form>
         <p>Number of losses: <span id="num-losses"></span></p>
+        <p class="reset-note" id="reset-note"></p>
     </div>
 
     <!-- Settings Panel -->
@@ -101,8 +102,24 @@
             </div>
         </div>
 
+        <div class="filter-section">
+            <h3>Counter Reset</h3>
+            <div class="filter-grid">
+                <label class="filter-chip">
+                    <input type="radio" name="reset-mode" data-reset-mode="rolling" checked>
+                    <span>Last 24 hours</span>
+                </label>
+                <label class="filter-chip">
+                    <input type="radio" name="reset-mode" data-reset-mode="midnight">
+                    <span>At midnight</span>
+                </label>
+            </div>
+            <p class="filter-hint" id="reset-hint"></p>
+        </div>
+
     </div>
 
+    <script src="lossCounter.js"></script>
     <script src="options.js"></script>
 </body>
 

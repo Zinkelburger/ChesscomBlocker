@@ -6,12 +6,13 @@
     "permissions": [
         "storage",
         "tabs",
+        "alarms",
         "https://api.chess.com/*",
         "https://*.chess.com/game*",
         "https://*.chess.com/play/online*"
     ],
     "background": {
-        "scripts": ["background.js"],
+        "scripts": ["lossCounter.js", "background.js"],
         "persistent": true
     },
     "content_scripts": [{
