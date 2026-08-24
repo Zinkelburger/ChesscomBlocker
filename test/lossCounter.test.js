@@ -1,22 +1,24 @@
-/**
- * Tests for the loss-counting logic in Chrome/lossCounter.js
- * (Firefox/lossCounter.js is a copy of the same file)
- * Run with: node test/background.test.js
- */
+// Tests for the pure loss-counting rules in src/lossCounter.js
+// Run with: npm test
 
+const test = require('node:test');
+const assert = require('node:assert');
 const fs = require('fs');
 const path = require('path');
-const assert = require('assert');
 
 const {
     DEFAULT_FILTERS,
     DEFAULT_RESET_MODE,
+    DEFAULT_MAX_GAMES,
     DAY_SECONDS,
+    normalizeMaxGames,
+    normalizeResetMode,
     gameMatchesFilters,
     getWindowStart,
     getNextReset,
+    archiveMonths,
     countLosses
-} = require('../Chrome/lossCounter.js');
+} = require('../src/lossCounter.js');
 
 // Load mock data
 const mockData = JSON.parse(
@@ -33,28 +35,6 @@ function lossesIn(games, username, windowStart, filters = DEFAULT_FILTERS) {
 function rollingWindow(currentTime) {
     return getWindowStart(currentTime * 1000, 'rolling');
 }
-
-/**
- * Test helpers
- */
-let testsPassed = 0;
-let testsFailed = 0;
-
-function test(name, fn) {
-    try {
-        fn();
-        console.log(`✓ ${name}`);
-        testsPassed++;
-    } catch (err) {
-        console.error(`✗ ${name}`);
-        console.error(`  ${err.message}`);
-        testsFailed++;
-    }
-}
-
-// ============ TESTS ============
-
-console.log('\n--- Loss Counting Tests ---\n');
 
 test('mock data has expected number of games', () => {
     assert.strictEqual(mockData.games.length, 5, 'Expected 5 games in mock data');
@@ -138,9 +118,7 @@ test('returns 0 losses for unknown user', () => {
     assert.strictEqual(losses, 0, 'Unknown user should have 0 losses');
 });
 
-// ============ FILTER TESTS ============
-
-console.log('\n--- Filter Tests ---\n');
+// ============ Filters ============
 
 test('gameMatchesFilters correctly matches blitz chess', () => {
     const game = { time_class: 'blitz', rules: 'chess' };
@@ -195,12 +173,10 @@ test('countLosses with all filters enabled counts all losses', () => {
     assert.strictEqual(losses, 3, 'Default filters should count all blitz chess losses');
 });
 
-// ============ RESET MODE TESTS ============
+// ============ Reset modes ============
 //
 // These build Date objects with the local-time constructor, so they assert the
 // same thing no matter what timezone the machine running them is set to.
-
-console.log('\n--- Reset Mode Tests ---\n');
 
 const seconds = (date) => Math.floor(date.getTime() / 1000);
 
@@ -348,11 +324,64 @@ test('midnight mode still respects game filters', () => {
         'counted once daily is enabled');
 });
 
-// ============ SUMMARY ============
+// ============ Settings normalisation ============
 
-console.log('\n--- Summary ---');
-console.log(`Passed: ${testsPassed}`);
-console.log(`Failed: ${testsFailed}`);
+test('normalizeMaxGames accepts positive whole numbers, as numbers or strings', () => {
+    assert.strictEqual(normalizeMaxGames(3), 3);
+    assert.strictEqual(normalizeMaxGames('3'), 3);
+    assert.strictEqual(normalizeMaxGames(' 12 '), 12);
+});
 
-process.exit(testsFailed > 0 ? 1 : 0);
+test('normalizeMaxGames falls back for an empty field, zero, negatives and junk', () => {
+    for (const bad of ['', '0', 0, -1, 'abc', null, undefined, NaN, '1.5x']) {
+        assert.strictEqual(normalizeMaxGames(bad), DEFAULT_MAX_GAMES, `input: ${JSON.stringify(bad)}`);
+    }
+    assert.strictEqual(normalizeMaxGames('', 7), 7, 'custom fallback');
+});
 
+test('normalizeResetMode keeps known modes and defaults the rest', () => {
+    assert.strictEqual(normalizeResetMode('rolling'), 'rolling');
+    assert.strictEqual(normalizeResetMode('midnight'), 'midnight');
+    assert.strictEqual(normalizeResetMode('weekly'), DEFAULT_RESET_MODE);
+    assert.strictEqual(normalizeResetMode(undefined), DEFAULT_RESET_MODE);
+});
+
+test('unknown reset mode behaves like rolling everywhere', () => {
+    const now = new Date(2024, 4, 15, 10, 30, 0, 0).getTime();
+    assert.strictEqual(getWindowStart(now, 'weekly'), getWindowStart(now, 'rolling'));
+    assert.strictEqual(getNextReset(now, 'weekly', null), null);
+});
+
+// ============ Monthly archives ============
+//
+// chess.com archives are keyed by UTC month, so these use Date.UTC.
+
+test('a window inside one month needs one archive', () => {
+    const now = Date.UTC(2024, 4, 15, 10, 30);
+    const windowStart = Math.floor(Date.UTC(2024, 4, 14, 10, 30) / 1000);
+    assert.deepStrictEqual(archiveMonths(windowStart, now), ['2024/05']);
+});
+
+test('a window that started last month needs both archives, oldest first', () => {
+    const now = Date.UTC(2024, 5, 1, 0, 30);
+    const windowStart = Math.floor(Date.UTC(2024, 5, 1, 0, 30) / 1000) - DAY_SECONDS;
+    assert.deepStrictEqual(archiveMonths(windowStart, now), ['2024/05', '2024/06']);
+});
+
+test('archives roll over the year boundary', () => {
+    const now = Date.UTC(2025, 0, 1, 5, 0);
+    const windowStart = Math.floor(now / 1000) - DAY_SECONDS;
+    assert.deepStrictEqual(archiveMonths(windowStart, now), ['2024/12', '2025/01']);
+});
+
+test('archive months are zero-padded', () => {
+    const now = Date.UTC(2024, 0, 20);
+    assert.deepStrictEqual(archiveMonths(Math.floor(now / 1000) - DAY_SECONDS, now), ['2024/01']);
+});
+
+test('a midnight window starting in the previous UTC month still fetches it', () => {
+    // Local midnight can be in the previous UTC month for zones ahead of UTC
+    const now = Date.UTC(2024, 5, 1, 2, 0);
+    const windowStart = Math.floor(Date.UTC(2024, 4, 31, 22, 0) / 1000);
+    assert.deepStrictEqual(archiveMonths(windowStart, now), ['2024/05', '2024/06']);
+});

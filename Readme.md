@@ -9,24 +9,30 @@ https://chrome.google.com/webstore/detail/chesscom-blocker/pacoipifgdogfclpkfmjo
 https://addons.mozilla.org/en-US/firefox/addon/chess-com-blocker/
 
 ## Installation
+The extension is built from a single source tree into one folder per browser:
+
+```
+npm test     # optional, runs the unit tests
+npm run build
+```
+
+This produces `dist/chrome` and `dist/firefox`.
+
 **Chrome**
 
-1. Download the repository as a ZIP file and extract it to a folder on your computer.
+1. Open Chrome and go to `chrome://extensions`.
 
-2. Open Chrome and go to `chrome://extensions`.
+2. Enable "Developer mode" by clicking on the toggle switch in the top right corner.
 
-3. Enable "Developer mode" by clicking on the toggle switch in the top right corner.
-
-4. Click on "Load unpacked" and select the extracted folder.
+3. Click on "Load unpacked" and select the `dist/chrome` folder.
 
 **Firefox**
-1. Download the Firefox repository as a ZIP file and extract it to a folder on your computer.
 
-2. Open Firefox and go to `about:debugging`.
+1. Open Firefox and go to `about:debugging`.
 
-3. Click on "This Firefox" and then on "Load Temporary Add-on".
+2. Click on "This Firefox" and then on "Load Temporary Add-on".
 
-4. Select the `manifest.json` file from the extracted folder.
+3. Select `dist/firefox/manifest.json`.
 
 ## Usage
 Click the extension. Input your username and the max number of games you wish to play. Once you exceed the number of games played, the chess.com/play/online page will be blocked. 
@@ -49,23 +55,36 @@ Contributions are welcome! Please open an issue or submit a pull request if you 
 ## Image Source
 I use the knook image obtained from reddit.com/r/anarchychess/wiki
 
-![The Knook](Firefox/knook.png)
+![The Knook](src/knook.png)
+
+## Project layout
+```
+src/          the extension itself - one copy, shared by both browsers
+manifests/    chrome.json (Manifest V3) and firefox.json (Manifest V2); the only per-browser files
+scripts/      build.js copies src/ into dist/<browser>/ and stamps the version from package.json
+test/         node:test suites, run with `npm test`
+docs/         screenshots
+```
+
+`src/shared.js` picks whichever of `browser` / `chrome` the browser provides, so everything else is written once in Promise style. Every page loads `shared.js` first (the service worker via `importScripts`, Firefox via the manifest's `scripts` list, the popup via a `<script>` tag).
+
+`src/lossCounter.js` holds the counting rules and has no browser dependencies, so the tests exercise exactly the code the extension runs. The build test also loads the generated manifests and checks that every file they reference exists.
+
+The version number lives only in `package.json`; bump it there and rebuild.
 
 ## How the code works
 To get the number of losses, I:
-+ Get the user's games for the current month with the chess.com API
 + Work out where the counting window starts (24 hours ago, or local midnight)
-+ Count the number of losses inside that window
++ Fetch the user's monthly game archives from the chess.com API for every month the window touches (usually one, two right after a month boundary), using ETags so unchanged archives are not re-downloaded
++ Count the losses inside that window
 
-The counting rules live in `lossCounter.js`, which is loaded by the background script, the popup, and the tests, so all three agree. `Chrome/lossCounter.js` and `Firefox/lossCounter.js` are copies of the same file.
+This loss check is triggered after a game ends, when a chess.com game or play page is opened, and from the popup whenever a setting changes.
 
-This loss check is triggered after a game ends, 
-
-If the number of losses is above the maxGames, some html is injected into the page instead of the normal content.
+If the number of losses is at or above the max, the game page content is replaced with a notice.
 
 An alarm is also set for the moment the window rolls over — the next local midnight, or 24 hours after the oldest loss that is still being counted — so the losses are re-counted and the block lifts without any user action.
 
-There is also the case where your game ends but the chess.com api hasn't updated yet. I handle it by using a mutation observer on `.player-component.player-bottom`. I look for the player game over component, and specifically parse the `.rating-score-change` class. If `current # of losses` + 1 > `maxGames` then the user is blocked immediately, and I don't have to wait for the chess.com API to update.
+There is also the case where your game ends but the chess.com api hasn't updated yet. I handle it by using a mutation observer on `.player-component.player-bottom`. I look for the player game over component, and specifically parse the `.rating-score-change` class. If `current # of losses` + 1 >= `maxGames` then the user is blocked immediately, and I don't have to wait for the chess.com API to update.
 
 ## License
 This project uses the GPL3 License (LICENSE.md).

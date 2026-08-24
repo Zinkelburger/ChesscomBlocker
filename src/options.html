@@ -35,7 +35,7 @@
 
         <form id="options-form">
             <label for="max-games">Max number of losses:</label><br>
-            <input type="number" id="max-games" name="max-games"><br><br>
+            <input type="number" id="max-games" name="max-games" min="1" step="1"><br><br>
             <label for="username">Chess.com username:</label><br>
             <input type="text" id="username" name="username"><br>
         </form>
@@ -119,6 +119,7 @@
 
     </div>
 
+    <script src="shared.js"></script>
     <script src="lossCounter.js"></script>
     <script src="options.js"></script>
 </body>

@@ -1,10 +1,10 @@
-// Shared loss-counting logic.
+// Pure loss-counting rules: no browser APIs, no network, no DOM.
 //
-// This file is the single source of truth for the counting rules. It is loaded by:
-//   - background.js (via importScripts on Chrome / the scripts array on Firefox)
+// This file is the single source of truth for the counting rules. It is loaded by
+//   - background.js (importScripts on Chrome / the manifest's scripts array on Firefox)
 //   - options.html (as a plain <script> before options.js)
-//   - test/background.test.js (via require)
-// so the tests exercise the same code the extension runs.
+//   - the tests under test/ (via require)
+// so the tests exercise exactly the code the extension runs.
 
 // Default filters - standard time controls, standard chess
 const DEFAULT_FILTERS = {
@@ -25,9 +25,26 @@ const DEFAULT_FILTERS = {
 // How the loss counter clears itself:
 //   'rolling'  - a moving window covering the last 24 hours (the original behaviour)
 //   'midnight' - the current calendar day, in the computer's local timezone
+const RESET_MODES = ['rolling', 'midnight'];
 const DEFAULT_RESET_MODE = 'rolling';
 
+const DEFAULT_MAX_GAMES = 5;
+
 const DAY_SECONDS = 86400;
+
+// The popup stores whatever is in the number input, so treat anything that is
+// not a positive whole number as "unset" rather than letting `'' >= 0` block
+// the user with zero losses.
+function normalizeMaxGames(value, fallback = DEFAULT_MAX_GAMES) {
+    const parsed = Number(value);
+    return Number.isInteger(parsed) && parsed >= 1 ? parsed : fallback;
+}
+
+// A mode written by a newer build (or a corrupted value) falls back to the
+// default so every consumer agrees on what it means.
+function normalizeResetMode(value) {
+    return RESET_MODES.includes(value) ? value : DEFAULT_RESET_MODE;
+}
 
 // Check if a game matches the active filters
 function gameMatchesFilters(game, filters) {
@@ -35,17 +52,14 @@ function gameMatchesFilters(game, filters) {
     const rules = game.rules || 'chess';
 
     // Game must match an enabled time control AND an enabled variant
-    const timeEnabled = filters[timeClass] === true;
-    const rulesEnabled = filters[rules] === true;
-
-    return timeEnabled && rulesEnabled;
+    return filters[timeClass] === true && filters[rules] === true;
 }
 
 // Start of the counting window, as a Unix timestamp in seconds.
 // In 'midnight' mode the Date API resolves midnight in whatever timezone the
 // computer is set to, so DST shifts and travel are handled for free.
 function getWindowStart(nowMs, resetMode) {
-    if (resetMode === 'midnight') {
+    if (normalizeResetMode(resetMode) === 'midnight') {
         const midnight = new Date(nowMs);
         midnight.setHours(0, 0, 0, 0);
         return Math.floor(midnight.getTime() / 1000);
@@ -57,7 +71,7 @@ function getWindowStart(nowMs, resetMode) {
 // nothing is due to expire. Used to schedule a re-check so a block lifts by
 // itself, and to show a countdown in the popup.
 function getNextReset(nowMs, resetMode, oldestCountedLoss) {
-    if (resetMode === 'midnight') {
+    if (normalizeResetMode(resetMode) === 'midnight') {
         // setHours(24, ...) rolls over to the next day, DST included
         const nextMidnight = new Date(nowMs);
         nextMidnight.setHours(24, 0, 0, 0);
@@ -68,6 +82,31 @@ function getNextReset(nowMs, resetMode, oldestCountedLoss) {
     }
     // The window clears one second after the oldest counted loss ages out
     return (oldestCountedLoss + DAY_SECONDS + 1) * 1000;
+}
+
+// The chess.com API publishes games in monthly archives keyed by UTC month.
+// Returns the 'YYYY/MM' archive keys, oldest first, that together cover
+// everything from `windowStart` (Unix seconds) up to `nowMs`. Usually that is
+// one month; just after a month boundary it is two.
+function archiveMonths(windowStart, nowMs) {
+    const first = new Date(windowStart * 1000);
+    const last = new Date(nowMs);
+    const months = [];
+
+    let year = first.getUTCFullYear();
+    let month = first.getUTCMonth();
+    const lastYear = last.getUTCFullYear();
+    const lastMonth = last.getUTCMonth();
+
+    while (year < lastYear || (year === lastYear && month <= lastMonth)) {
+        months.push(`${year}/${String(month + 1).padStart(2, '0')}`);
+        month++;
+        if (month === 12) {
+            month = 0;
+            year++;
+        }
+    }
+    return months;
 }
 
 // Count the losses inside the window. Games are ordered oldest-first by the
@@ -89,15 +128,13 @@ function countLosses(games, username, windowStart, filters = DEFAULT_FILTERS) {
             break;
         }
 
-        // Only count games that match the filters
         if (!gameMatchesFilters(game, filters)) {
             continue;
         }
 
-        if (game.white.username.toLowerCase() === lowerUsername && game.black.result === 'win') {
-            losses++;
-            oldestCountedLoss = game.end_time;
-        } else if (game.black.username.toLowerCase() === lowerUsername && game.white.result === 'win') {
+        const lostAsWhite = game.white.username.toLowerCase() === lowerUsername && game.black.result === 'win';
+        const lostAsBlack = game.black.username.toLowerCase() === lowerUsername && game.white.result === 'win';
+        if (lostAsWhite || lostAsBlack) {
             losses++;
             oldestCountedLoss = game.end_time;
         }
@@ -110,11 +147,16 @@ function countLosses(games, username, windowStart, filters = DEFAULT_FILTERS) {
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
         DEFAULT_FILTERS,
+        RESET_MODES,
         DEFAULT_RESET_MODE,
+        DEFAULT_MAX_GAMES,
         DAY_SECONDS,
+        normalizeMaxGames,
+        normalizeResetMode,
         gameMatchesFilters,
         getWindowStart,
         getNextReset,
+        archiveMonths,
         countLosses
     };
 }
