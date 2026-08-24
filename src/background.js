@@ -14,6 +14,9 @@ const RESET_ALARM = 'reset-window';
 // Minimum lead time the alarms API accepts; Chrome silently clamps to this
 const MIN_ALARM_DELAY_MS = 60000;
 
+// How long to wait before trying again when the API could not be reached
+const RETRY_DELAY_MS = 5 * 60000;
+
 // Fetch one monthly archive, honouring the ETag we cached for it last time.
 // Returns { etag, games } on success, the cached entry if the API is
 // unreachable and we have one, or null if there is nothing usable.
@@ -86,7 +89,7 @@ async function scheduleResetAlarm(nextReset) {
 }
 
 // Recount losses and update the blocked state
-async function checkGamesPlayed() {
+async function runCheck() {
     const settings = await extensionApi.storage.sync.get({
         maxGames: DEFAULT_MAX_GAMES,
         username: '',
@@ -102,14 +105,19 @@ async function checkGamesPlayed() {
     const filters = { ...DEFAULT_FILTERS, ...settings.gameFilters };
     const resetMode = normalizeResetMode(settings.resetMode);
 
-    const nowMs = Date.now();
-    const windowStart = getWindowStart(nowMs, resetMode);
-
-    const games = await fetchGamesSince(username, windowStart, nowMs);
+    // The window can only move forward while the fetch is in flight, so the
+    // archives chosen now still cover it; the count itself uses a fresh clock.
+    const games = await fetchGamesSince(username, getWindowStart(Date.now(), resetMode), Date.now());
     if (games === null) {
-        return; // Keep the previous result rather than guessing
+        // Keep the previous result rather than guessing, but make sure we
+        // come back for another go: a consumed alarm would otherwise leave a
+        // block with nothing to lift it.
+        await scheduleResetAlarm(Date.now() + RETRY_DELAY_MS);
+        return;
     }
 
+    const nowMs = Date.now();
+    const windowStart = getWindowStart(nowMs, resetMode);
     const { sessionDisabled } = await extensionApi.storage.session.get({ sessionDisabled: false });
     const { losses, oldestCountedLoss } = countLosses(games, username, windowStart, filters);
     const nextReset = getNextReset(nowMs, resetMode, oldestCountedLoss);
@@ -123,6 +131,30 @@ async function checkGamesPlayed() {
         blocked: !sessionDisabled && losses >= maxGames
     });
     await scheduleResetAlarm(nextReset);
+}
+
+// Checks are triggered from many places (tabs, the popup, alarms, startup)
+// and each one reads storage, fetches, writes storage and re-arms the alarm.
+// Two of those interleaving can leave storage and the alarm disagreeing, so
+// run one at a time; a request that arrives mid-run queues exactly one more.
+let checkInFlight = null;
+let checkRequested = false;
+
+function checkGamesPlayed() {
+    if (checkInFlight) {
+        checkRequested = true;
+        return checkInFlight;
+    }
+    checkInFlight = runCheck()
+        .catch((error) => console.error('Loss check failed:', error))
+        .finally(() => {
+            checkInFlight = null;
+            if (checkRequested) {
+                checkRequested = false;
+                checkGamesPlayed();
+            }
+        });
+    return checkInFlight;
 }
 
 // The content script saw a game end in a loss before the API has caught up.

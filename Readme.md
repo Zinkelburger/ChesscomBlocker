@@ -47,7 +47,7 @@ The gear menu has a **Counter Reset** setting with two choices:
 
 Midnight is read from your computer's clock, so it follows whatever timezone the machine is set to (and handles daylight saving changes on its own). The popup shows which timezone it resolved to, plus a countdown to the next reset.
 
-Either way the extension schedules an alarm for the moment the window rolls over, so a block lifts by itself instead of waiting for you to click something. Reload the chess.com tab to see the unblocked page.
+Either way the extension schedules an alarm for the moment the window rolls over, so a block lifts by itself instead of waiting for you to click something; an open chess.com tab showing the block notice reloads on its own.
 
 ## Contributing
 Contributions are welcome! Please open an issue or submit a pull request if you have any suggestions or improvements.

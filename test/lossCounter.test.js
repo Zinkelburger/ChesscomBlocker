@@ -324,6 +324,22 @@ test('midnight mode still respects game filters', () => {
         'counted once daily is enabled');
 });
 
+test('a game with no end_time is skipped without ending the walk', () => {
+    const now = new Date(2024, 4, 15, 10, 30, 0, 0);
+    const windowStart = getWindowStart(now.getTime(), 'midnight');
+    const broken = lostGameAt(new Date(2024, 4, 15, 9, 0, 0, 0));
+    delete broken.end_time;
+    const games = [
+        lostGameAt(new Date(2024, 4, 15, 1, 0, 0, 0)),
+        broken,
+        lostGameAt(new Date(2024, 4, 15, 9, 30, 0, 0))
+    ];
+
+    const result = countLosses(games, 'me', windowStart);
+    assert.strictEqual(result.losses, 2);
+    assert.strictEqual(result.oldestCountedLoss, seconds(new Date(2024, 4, 15, 1, 0, 0, 0)));
+});
+
 // ============ Settings normalisation ============
 
 test('normalizeMaxGames accepts positive whole numbers, as numbers or strings', () => {

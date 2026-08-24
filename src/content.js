@@ -9,7 +9,10 @@ const LOSS_RATING_CHANGE = -4;
 // know about it
 const API_CATCH_UP_DELAY_MS = 15000;
 
+let blockPageShown = false;
+
 function showBlockedPage() {
+    blockPageShown = true;
     const heading = document.createElement('h1');
     heading.textContent = 'Chess.com Blocker: Daily game limit reached. Please take a well-deserved break.';
     Object.assign(heading.style, {
@@ -43,9 +46,15 @@ sendToBackground({ action: 'checkGamesPlayed' });
 extensionApi.storage.local.get({ blocked: false }).then((items) => blockIfNeeded(items.blocked));
 
 extensionApi.storage.onChanged.addListener((changes, areaName) => {
-    if (areaName === 'local' && changes.blocked) {
-        blockIfNeeded(changes.blocked.newValue);
+    if (areaName !== 'local' || !changes.blocked) {
+        return;
     }
+    if (changes.blocked.newValue === false && blockPageShown) {
+        // The window rolled over; bring the real page back
+        window.location.reload();
+        return;
+    }
+    blockIfNeeded(changes.blocked.newValue);
 });
 
 // Watch for the game-over card. If the rating change says we lost, tell the

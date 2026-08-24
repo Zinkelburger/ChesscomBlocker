@@ -123,6 +123,11 @@ function countLosses(games, username, windowStart, filters = DEFAULT_FILTERS) {
     for (let i = games.length - 1; i >= 0; i--) {
         const game = games[i];
 
+        // A game we cannot place in time cannot be counted, and must not stop
+        // the walk either
+        if (typeof game.end_time !== 'number') {
+            continue;
+        }
         // Stop once we walk off the start of the window
         if (game.end_time < windowStart) {
             break;
