@@ -173,7 +173,7 @@ filterCheckboxes.forEach((checkbox) => {
 // The background script (or this same popup) writes to storage; render from
 // what actually landed there rather than from what we think we wrote.
 extensionApi.storage.onChanged.addListener((changes, areaName) => {
-    if (areaName === 'sync') {
+    if (areaName === 'local') {
         if (changes.losses) {
             document.getElementById('num-losses').textContent = changes.losses.newValue;
         }
@@ -181,35 +181,35 @@ extensionApi.storage.onChanged.addListener((changes, areaName) => {
             currentNextReset = changes.nextReset.newValue;
             renderResetNote();
         }
-        if (changes.resetMode) {
-            currentResetMode = normalizeResetMode(changes.resetMode.newValue);
-            renderResetMode();
-        }
-    }
-    if (areaName === 'session' && changes.sessionDisabled) {
+    } else if (areaName === 'sync' && changes.resetMode) {
+        currentResetMode = normalizeResetMode(changes.resetMode.newValue);
+        renderResetMode();
+    } else if (areaName === 'session' && changes.sessionDisabled) {
         updateDisabledUI(changes.sessionDisabled.newValue);
     }
 });
 
 // ============ Initial load ============
 
-extensionApi.storage.sync.get({
-    maxGames: DEFAULT_MAX_GAMES,
-    username: '',
-    losses: 0,
-    resetMode: DEFAULT_RESET_MODE,
-    nextReset: null,
-    gameFilters: DEFAULT_FILTERS
-}).then((items) => {
-    maxGamesInput.value = normalizeMaxGames(items.maxGames);
-    usernameInput.value = items.username;
-    document.getElementById('num-losses').textContent = items.losses;
+// Settings come from sync storage, the computed result from local storage
+Promise.all([
+    extensionApi.storage.sync.get({
+        maxGames: DEFAULT_MAX_GAMES,
+        username: '',
+        resetMode: DEFAULT_RESET_MODE,
+        gameFilters: DEFAULT_FILTERS
+    }),
+    extensionApi.storage.local.get({ losses: 0, nextReset: null })
+]).then(([settings, state]) => {
+    maxGamesInput.value = normalizeMaxGames(settings.maxGames);
+    usernameInput.value = settings.username;
+    document.getElementById('num-losses').textContent = state.losses;
 
-    currentResetMode = normalizeResetMode(items.resetMode);
-    currentNextReset = items.nextReset;
+    currentResetMode = normalizeResetMode(settings.resetMode);
+    currentNextReset = state.nextReset;
     renderResetMode();
 
-    const filters = { ...DEFAULT_FILTERS, ...items.gameFilters };
+    const filters = { ...DEFAULT_FILTERS, ...settings.gameFilters };
     filterCheckboxes.forEach((checkbox) => {
         checkbox.checked = filters[checkbox.dataset.filter] === true;
     });

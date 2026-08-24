@@ -40,10 +40,10 @@ function blockIfNeeded(blocked) {
 
 // Ask for a fresh count, and apply whatever the last one decided in the meantime
 sendToBackground({ action: 'checkGamesPlayed' });
-extensionApi.storage.sync.get({ blocked: false }).then((items) => blockIfNeeded(items.blocked));
+extensionApi.storage.local.get({ blocked: false }).then((items) => blockIfNeeded(items.blocked));
 
 extensionApi.storage.onChanged.addListener((changes, areaName) => {
-    if (areaName === 'sync' && changes.blocked) {
+    if (areaName === 'local' && changes.blocked) {
         blockIfNeeded(changes.blocked.newValue);
     }
 });

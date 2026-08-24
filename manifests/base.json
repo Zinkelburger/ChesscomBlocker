@@ -1,0 +1,24 @@
+{
+    "name": "Chess.com Blocker",
+    "description": "Prevent binging on chess.com. Blocks chess.com if you lose too many games.",
+    "content_scripts": [
+        {
+            "matches": [
+                "https://*.chess.com/game*",
+                "https://*.chess.com/play/online*"
+            ],
+            "js": [
+                "shared.js",
+                "content.js"
+            ]
+        }
+    ],
+    "options_ui": {
+        "page": "options.html"
+    },
+    "icons": {
+        "16": "icons/icon-16.png",
+        "48": "icons/icon-48.png",
+        "128": "icons/icon-128.png"
+    }
+}

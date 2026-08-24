@@ -1,9 +1,11 @@
 #!/usr/bin/env node
 // Assemble loadable extensions from the single source tree.
 //
-//   src/                 -> copied verbatim into every target
-//   manifests/<target>.json -> becomes dist/<target>/manifest.json, with the
-//                             version stamped from package.json
+//   src/                    -> copied verbatim into every target
+//   manifests/base.json     -> manifest keys shared by every browser
+//   manifests/<target>.json -> keys that differ per browser, layered on top
+//                              (top-level keys replace, they do not merge)
+// The version is stamped from package.json.
 //
 // Usage: node scripts/build.js [outDir]   (default: dist)
 
@@ -16,8 +18,13 @@ const MANIFEST_DIR = path.join(ROOT, 'manifests');
 
 const TARGETS = ['chrome', 'firefox'];
 
+function readJson(file) {
+    return JSON.parse(fs.readFileSync(file, 'utf8'));
+}
+
 function build(outDir = path.join(ROOT, 'dist')) {
-    const { version } = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
+    const { version } = readJson(path.join(ROOT, 'package.json'));
+    const base = readJson(path.join(MANIFEST_DIR, 'base.json'));
     const built = {};
 
     for (const target of TARGETS) {
@@ -25,8 +32,7 @@ function build(outDir = path.join(ROOT, 'dist')) {
         fs.rmSync(targetDir, { recursive: true, force: true });
         fs.cpSync(SRC_DIR, targetDir, { recursive: true });
 
-        const manifest = JSON.parse(fs.readFileSync(path.join(MANIFEST_DIR, `${target}.json`), 'utf8'));
-        manifest.version = version;
+        const manifest = { ...base, ...readJson(path.join(MANIFEST_DIR, `${target}.json`)), version };
         fs.writeFileSync(path.join(targetDir, 'manifest.json'), JSON.stringify(manifest, null, 4) + '\n');
 
         built[target] = targetDir;

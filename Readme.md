@@ -60,7 +60,7 @@ I use the knook image obtained from reddit.com/r/anarchychess/wiki
 ## Project layout
 ```
 src/          the extension itself - one copy, shared by both browsers
-manifests/    chrome.json (Manifest V3) and firefox.json (Manifest V2); the only per-browser files
+manifests/    base.json (shared keys) plus chrome.json (Manifest V3) and firefox.json (Manifest V2) overrides
 scripts/      build.js copies src/ into dist/<browser>/ and stamps the version from package.json
 test/         node:test suites, run with `npm test`
 docs/         screenshots

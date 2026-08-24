@@ -114,7 +114,10 @@ async function checkGamesPlayed() {
     const { losses, oldestCountedLoss } = countLosses(games, username, windowStart, filters);
     const nextReset = getNextReset(nowMs, resetMode, oldestCountedLoss);
 
-    await extensionApi.storage.sync.set({
+    // Derived state is per-machine (nextReset depends on the local timezone)
+    // and rewritten on every check, so it lives in local storage; sync is
+    // reserved for the user's settings and has tight write quotas.
+    await extensionApi.storage.local.set({
         losses,
         nextReset,
         blocked: !sessionDisabled && losses >= maxGames
@@ -126,15 +129,16 @@ async function checkGamesPlayed() {
 // Block immediately if that loss would hit the limit, instead of letting the
 // user squeeze in another game while we wait for chess.com.
 async function recordProvisionalLoss() {
-    const [{ losses, maxGames }, { sessionDisabled }] = await Promise.all([
-        extensionApi.storage.sync.get({ losses: 0, maxGames: DEFAULT_MAX_GAMES }),
+    const [{ maxGames }, { losses }, { sessionDisabled }] = await Promise.all([
+        extensionApi.storage.sync.get({ maxGames: DEFAULT_MAX_GAMES }),
+        extensionApi.storage.local.get({ losses: 0 }),
         extensionApi.storage.session.get({ sessionDisabled: false })
     ]);
     if (sessionDisabled) {
         return;
     }
     if (losses + 1 >= normalizeMaxGames(maxGames)) {
-        await extensionApi.storage.sync.set({ blocked: true });
+        await extensionApi.storage.local.set({ blocked: true });
     }
 }
 
@@ -157,8 +161,12 @@ extensionApi.alarms.onAlarm.addListener((alarm) => {
 // Make sure an alarm exists after a browser restart or an update
 extensionApi.runtime.onStartup.addListener(checkGamesPlayed);
 extensionApi.runtime.onInstalled.addListener(async () => {
-    // Cache keys used before the per-archive cache; harmless but dead weight
-    await extensionApi.storage.local.remove(['cachedEtag', 'cachedGames', 'cacheUrl']);
+    // Tidy up keys from earlier layouts: the single-URL cache, and derived
+    // state that used to be written to sync. checkGamesPlayed rebuilds both.
+    await Promise.all([
+        extensionApi.storage.local.remove(['cachedEtag', 'cachedGames', 'cacheUrl']),
+        extensionApi.storage.sync.remove(['losses', 'nextReset', 'blocked'])
+    ]);
     checkGamesPlayed();
 });
 
