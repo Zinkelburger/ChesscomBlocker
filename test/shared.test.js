@@ -30,3 +30,12 @@ test('other pages are left alone', () => {
         assert.ok(!GAME_PAGE_PATTERN.test(url), url);
     }
 });
+
+const { formatCountdown, BREAK_DURATION_MS } = require('../src/shared.js');
+
+test('countdowns read naturally', () => {
+    assert.strictEqual(formatCountdown(0), 'under a minute');
+    assert.strictEqual(formatCountdown(12 * 60000), '12m');
+    assert.strictEqual(formatCountdown(BREAK_DURATION_MS), '1h 0m');
+    assert.strictEqual(formatCountdown(5 * 3600000 + 12 * 60000), '5h 12m');
+});

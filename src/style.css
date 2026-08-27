@@ -1,291 +1,121 @@
-:root {
-    --text: #0f280b;
-    --background: #edfaeb;
-    --primary: #7bb28f;
-    --secondary: #d2e5e2;
-    --accent: #57948c;
-    --danger: #c0392b;
-    --success: #27ae60;
-    font-size: 16px;
-}
 body {
-    font-family: "Segoe UI", "Lucida Grande", Tahoma, Arial, sans-serif;
-    font-size: 100%;
-    background-color: var(--background);
-    color: var(--text);
-    width: 280px;
-    min-height: 320px;
+    font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+    color: #222;
+    background: #fff;
+    width: 240px;
     margin: 0;
-    padding: 12px;
+    padding: 14px;
     box-sizing: border-box;
 }
+
 h1 {
-    margin-top: 0px;
-    text-align: center;
-    color: var(--text);
+    font-size: 16px;
+    font-weight: 600;
+    margin: 0 0 10px;
 }
-form {
-    background-color: var(--background);
-}
-input[type="text"], input[type="number"] {
-    background-color: var(--secondary);
-    color: var(--text);
-    border-radius: 5px;
-    border: 2px solid var(--primary);
-    box-shadow: 0px 0px 5px rgba(0,0,0,0.1);
-    margin-top: 3px;
-}
-input[type="text"]:focus, input[type="number"]:focus {
-    outline: none;
-    border-color: var(--accent);
-    border-width: 2px;
-}
+
 p {
-    margin-top: 10px;
-}
-
-/* Session toggle status bar */
-.status-bar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    background: var(--secondary);
-    border-radius: 8px;
-    padding: 10px 14px;
-    margin-bottom: 16px;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.08);
-}
-
-.status-indicator {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-}
-
-.status-dot {
-    width: 12px;
-    height: 12px;
-    min-width: 12px;
-    min-height: 12px;
-    flex-shrink: 0;
-    border-radius: 50%;
-    background: var(--success);
-    box-shadow: 0 0 6px var(--success);
-    transition: background 0.2s, box-shadow 0.2s;
-}
-
-.status-dot.disabled {
-    background: var(--danger);
-    box-shadow: 0 0 6px var(--danger);
-}
-
-.status-text {
-    font-size: 0.9rem;
-    font-weight: 500;
-    color: var(--text);
-}
-
-/* Toggle switch */
-.toggle-wrapper {
-    display: flex;
-    align-items: center;
-}
-
-.toggle {
-    position: relative;
-    width: 44px;
-    height: 24px;
-}
-
-.toggle input {
-    opacity: 0;
-    width: 0;
-    height: 0;
-}
-
-.toggle-slider {
-    position: absolute;
-    cursor: pointer;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background-color: var(--success);
-    transition: 0.25s;
-    border-radius: 24px;
-}
-
-.toggle-slider:before {
-    position: absolute;
-    content: "";
-    height: 18px;
-    width: 18px;
-    left: 3px;
-    bottom: 3px;
-    background-color: white;
-    transition: 0.25s;
-    border-radius: 50%;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
-}
-
-.toggle input:checked + .toggle-slider {
-    background-color: var(--danger);
-}
-
-.toggle input:checked + .toggle-slider:before {
-    transform: translateX(20px);
-}
-
-.toggle input:focus + .toggle-slider {
-    box-shadow: 0 0 0 2px var(--accent);
-}
-
-/* Header with gear button */
-.header {
-    display: flex;
-    align-items: flex-start;
-    justify-content: center;
-    position: relative;
-    margin-bottom: 8px;
-}
-
-.header h1 {
     margin: 0;
 }
 
-.gear-btn {
-    position: absolute;
-    right: 0;
-    top: 0;
-    background: var(--secondary);
-    border: none;
-    border-radius: 8px;
+.count {
+    font-size: 28px;
+    font-weight: 600;
+    line-height: 1.1;
+}
+
+.note {
+    font-size: 12px;
+    color: #666;
+    margin-top: 2px;
+}
+
+.note:empty {
+    display: none;
+}
+
+button {
+    display: block;
+    width: 100%;
+    margin-top: 12px;
     padding: 8px;
-    cursor: pointer;
-    color: var(--text);
-    transition: background 0.2s, transform 0.2s;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-.gear-btn:hover {
-    background: var(--primary);
-    transform: rotate(45deg);
-}
-
-.gear-btn.active {
-    background: var(--accent);
-    color: white;
-    transform: rotate(90deg);
-}
-
-/* Panel visibility */
-.panel {
-    transition: opacity 0.2s;
-}
-
-.panel.hidden {
-    display: none;
-}
-
-/* Settings panel */
-.settings-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 12px;
-}
-
-.settings-header h2 {
-    margin: 0;
-    font-size: 1rem;
-    color: var(--text);
-}
-
-.toggle-all-btn {
-    background: var(--accent);
-    color: white;
+    font: inherit;
+    color: #fff;
+    background: #222;
     border: none;
-    border-radius: 6px;
-    padding: 6px 12px;
-    font-size: 0.75rem;
+    border-radius: 4px;
     cursor: pointer;
-    transition: background 0.2s;
 }
 
-.toggle-all-btn:hover {
-    background: var(--primary);
-    color: var(--text);
+button:hover {
+    background: #444;
 }
 
-.filter-section {
-    margin-bottom: 16px;
+button.secondary {
+    color: #222;
+    background: #fff;
+    border: 1px solid #bbb;
 }
 
-.filter-section h3 {
-    margin: 0 0 8px 0;
-    font-size: 0.85rem;
-    color: var(--accent);
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
+button.secondary:hover {
+    background: #f2f2f2;
 }
 
-.filter-grid {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 8px;
-}
-
-.filter-chip {
+.row {
     display: flex;
     align-items: center;
-    background: var(--secondary);
-    border-radius: 6px;
-    padding: 8px 10px;
+    gap: 6px;
+    margin-top: 10px;
     cursor: pointer;
-    transition: background 0.2s, box-shadow 0.2s;
-    user-select: none;
 }
 
-.filter-chip:hover {
-    background: var(--primary);
+.row input {
+    margin: 0;
 }
 
-.filter-chip input {
-    display: none;
+details {
+    margin-top: 14px;
+    border-top: 1px solid #ddd;
+    padding-top: 8px;
 }
 
-.filter-chip span {
-    font-size: 0.85rem;
-    color: var(--text);
-    opacity: 0.6;
-    transition: opacity 0.2s;
+summary {
+    cursor: pointer;
+    color: #666;
+    font-size: 12px;
 }
 
-.filter-chip input:checked + span {
-    opacity: 1;
-    font-weight: 500;
+details > label {
+    display: block;
+    margin-top: 10px;
+    font-size: 12px;
+    color: #666;
 }
 
-.filter-chip:has(input:checked) {
-    background: var(--primary);
-    box-shadow: inset 0 0 0 2px var(--accent);
+details > label input {
+    display: block;
+    width: 100%;
+    margin-top: 3px;
+    padding: 5px 6px;
+    font: inherit;
+    color: #222;
+    border: 1px solid #bbb;
+    border-radius: 4px;
+    box-sizing: border-box;
 }
 
-
-/* Countdown under the loss count */
-.reset-note {
-    margin-top: 4px;
-    font-size: 0.78rem;
-    color: var(--accent);
+fieldset {
+    margin: 12px 0 0;
+    padding: 0;
+    border: none;
 }
 
-/* Explanatory line under a settings section */
-.filter-hint {
-    margin: 8px 0 0 0;
-    font-size: 0.72rem;
-    line-height: 1.35;
-    color: var(--text);
-    opacity: 0.65;
+legend {
+    padding: 0;
+    font-size: 12px;
+    color: #666;
+}
+
+fieldset .row {
+    margin-top: 6px;
 }

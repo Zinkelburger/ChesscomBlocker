@@ -12,6 +12,22 @@ const extensionApi = globalThis.browser ?? globalThis.chrome;
 // The chess.com pages that are blocked once the loss limit is hit
 const GAME_PAGE_PATTERN = /^https?:\/\/([^/]+\.)?chess\.com\/(game|play\/online)/;
 
+// How long "Block after this game" keeps the play pages blocked
+const BREAK_DURATION_MS = 60 * 60000;
+
+// "5h 12m" / "12m" / "under a minute"
+function formatCountdown(ms) {
+    const minutes = Math.ceil(ms / 60000);
+    if (minutes < 1) {
+        return 'under a minute';
+    }
+    const hours = Math.floor(minutes / 60);
+    if (hours < 1) {
+        return `${minutes}m`;
+    }
+    return `${hours}h ${minutes % 60}m`;
+}
+
 // Fire-and-forget message to the background script. The background never
 // replies, and the sender (a popup, or a tab being navigated away from) may be
 // gone before the browser settles the call, so a rejection here carries no
@@ -22,5 +38,5 @@ function sendToBackground(message) {
 
 // Export for the Node tests; harmless in the browser
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { GAME_PAGE_PATTERN };
+    module.exports = { GAME_PAGE_PATTERN, BREAK_DURATION_MS, formatCountdown };
 }

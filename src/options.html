@@ -2,122 +2,59 @@
 <html lang="en">
 
 <head>
-    <title>Chess Blocker Options</title>
+    <meta charset="utf-8">
+    <title>Chess Blocker</title>
     <link href="./style.css" rel="stylesheet" type="text/css">
 </head>
 
 <body>
-    <div class="header">
-        <h1>Chess<br>Blocker</h1>
-        <button class="gear-btn" id="gear-btn" title="Game Type Settings">
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <circle cx="12" cy="12" r="3"></circle>
-                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
-            </svg>
-        </button>
-    </div>
-    
-    <!-- Main Panel -->
-    <div class="panel" id="main-panel">
-        <!-- Session disable toggle -->
-        <div class="status-bar">
-            <div class="status-indicator">
-                <div class="status-dot" id="status-dot"></div>
-                <span class="status-text" id="status-text">Extension Active</span>
-            </div>
-        <div class="toggle-wrapper">
-            <label class="toggle">
-                <input type="checkbox" id="session-disable">
-                <span class="toggle-slider"></span>
-            </label>
-        </div>
-        </div>
+    <h1>Chess Blocker</h1>
 
-        <form id="options-form">
-            <label for="max-games">Max number of losses:</label><br>
-            <input type="number" id="max-games" name="max-games" min="1" step="1"><br><br>
-            <label for="username">Chess.com username:</label><br>
-            <input type="text" id="username" name="username"><br>
-        </form>
-        <p>Number of losses: <span id="num-losses"></span></p>
-        <p class="reset-note" id="reset-note"></p>
-    </div>
+    <p class="count"><span id="num-losses">0</span> / <span id="max-losses">5</span> losses</p>
+    <p class="note" id="reset-note"></p>
 
-    <!-- Settings Panel -->
-    <div class="panel hidden" id="settings-panel">
-        <div class="settings-header">
-            <h2>Tracking:</h2>
-            <button class="toggle-all-btn" id="toggle-all-btn">Select All</button>
-        </div>
-        
-        <div class="filter-section">
-            <h3>Time Controls</h3>
-            <div class="filter-grid">
-                <label class="filter-chip">
-                    <input type="checkbox" data-filter="bullet" checked>
-                    <span>Bullet</span>
-                </label>
-                <label class="filter-chip">
-                    <input type="checkbox" data-filter="blitz" checked>
-                    <span>Blitz</span>
-                </label>
-                <label class="filter-chip">
-                    <input type="checkbox" data-filter="rapid" checked>
-                    <span>Rapid</span>
-                </label>
-                <label class="filter-chip">
-                    <input type="checkbox" data-filter="daily">
-                    <span>Daily</span>
-                </label>
-            </div>
-        </div>
+    <button id="break-btn" type="button">Block after this game</button>
+    <p class="note" id="break-note"></p>
 
-        <div class="filter-section">
-            <h3>Variants</h3>
-            <div class="filter-grid">
-                <label class="filter-chip">
-                    <input type="checkbox" data-filter="chess" checked>
-                    <span>Standard</span>
-                </label>
-                <label class="filter-chip">
-                    <input type="checkbox" data-filter="chess960">
-                    <span>Chess960</span>
-                </label>
-                <label class="filter-chip">
-                    <input type="checkbox" data-filter="bughouse">
-                    <span>Bughouse</span>
-                </label>
-                <label class="filter-chip">
-                    <input type="checkbox" data-filter="crazyhouse">
-                    <span>Crazyhouse</span>
-                </label>
-                <label class="filter-chip">
-                    <input type="checkbox" data-filter="threecheck">
-                    <span>3-Check</span>
-                </label>
-                <label class="filter-chip">
-                    <input type="checkbox" data-filter="kingofthehill">
-                    <span>King of the Hill</span>
-                </label>
-            </div>
-        </div>
+    <label class="row">
+        <input type="checkbox" id="session-disable">
+        Pause until browser restarts
+    </label>
 
-        <div class="filter-section">
-            <h3>Counter Reset</h3>
-            <div class="filter-grid">
-                <label class="filter-chip">
-                    <input type="radio" name="reset-mode" data-reset-mode="rolling" checked>
-                    <span>Last 24 hours</span>
-                </label>
-                <label class="filter-chip">
-                    <input type="radio" name="reset-mode" data-reset-mode="midnight">
-                    <span>At midnight</span>
-                </label>
-            </div>
-            <p class="filter-hint" id="reset-hint"></p>
-        </div>
+    <details>
+        <summary>Settings</summary>
 
-    </div>
+        <label>Chess.com username
+            <input type="text" id="username" autocomplete="off" spellcheck="false">
+        </label>
+        <label>Max losses
+            <input type="number" id="max-games" min="1" step="1">
+        </label>
+
+        <fieldset>
+            <legend>Counter resets</legend>
+            <label class="row"><input type="radio" name="reset-mode" data-reset-mode="rolling"> 24 hours after each loss</label>
+            <label class="row"><input type="radio" name="reset-mode" data-reset-mode="midnight"> At midnight</label>
+        </fieldset>
+
+        <fieldset>
+            <legend>Time controls</legend>
+            <label class="row"><input type="checkbox" data-filter="bullet"> Bullet</label>
+            <label class="row"><input type="checkbox" data-filter="blitz"> Blitz</label>
+            <label class="row"><input type="checkbox" data-filter="rapid"> Rapid</label>
+            <label class="row"><input type="checkbox" data-filter="daily"> Daily</label>
+        </fieldset>
+
+        <fieldset>
+            <legend>Variants</legend>
+            <label class="row"><input type="checkbox" data-filter="chess"> Standard</label>
+            <label class="row"><input type="checkbox" data-filter="chess960"> Chess960</label>
+            <label class="row"><input type="checkbox" data-filter="bughouse"> Bughouse</label>
+            <label class="row"><input type="checkbox" data-filter="crazyhouse"> Crazyhouse</label>
+            <label class="row"><input type="checkbox" data-filter="threecheck"> 3-Check</label>
+            <label class="row"><input type="checkbox" data-filter="kingofthehill"> King of the Hill</label>
+        </fieldset>
+    </details>
 
     <script src="shared.js"></script>
     <script src="lossCounter.js"></script>

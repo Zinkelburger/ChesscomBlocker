@@ -76,16 +76,35 @@ async function fetchGamesSince(username, windowStart, nowMs) {
     return archives.flatMap((archive) => archive.games);
 }
 
-// Wake up when the window rolls over, so a block lifts without the user
-// having to click anything
-async function scheduleResetAlarm(nextReset) {
+// Wake up when the window rolls over (or a break ends), so a block lifts
+// without the user having to click anything
+async function scheduleResetAlarm(when) {
     await extensionApi.alarms.clear(RESET_ALARM);
-    if (!nextReset) {
+    if (!when) {
         return;
     }
     await extensionApi.alarms.create(RESET_ALARM, {
-        when: Math.max(nextReset, Date.now() + MIN_ALARM_DELAY_MS)
+        when: Math.max(when, Date.now() + MIN_ALARM_DELAY_MS)
     });
+}
+
+// Earliest of the given times, ignoring nulls; null if there are none
+function earliest(...times) {
+    const valid = times.filter((time) => typeof time === 'number');
+    return valid.length ? Math.min(...valid) : null;
+}
+
+// A break ("Block after this game") is a plain deadline in local storage.
+// Once it passes it is removed so the popup and content script see it as over.
+async function activeBreak(nowMs) {
+    const { breakUntil } = await extensionApi.storage.local.get({ breakUntil: null });
+    if (typeof breakUntil === 'number' && breakUntil > nowMs) {
+        return breakUntil;
+    }
+    if (breakUntil !== null) {
+        await extensionApi.storage.local.remove('breakUntil');
+    }
+    return null;
 }
 
 // Recount losses and update the blocked state
@@ -99,7 +118,14 @@ async function runCheck() {
 
     const username = settings.username.trim().toLowerCase();
     if (!username) {
-        return; // Nothing to check until a username is configured
+        // Nothing to count until a username is configured, but a break
+        // still blocks on its own
+        const nowMs = Date.now();
+        const breakUntil = await activeBreak(nowMs);
+        const { sessionDisabled } = await extensionApi.storage.session.get({ sessionDisabled: false });
+        await extensionApi.storage.local.set({ blocked: !sessionDisabled && breakUntil !== null });
+        await scheduleResetAlarm(breakUntil);
+        return;
     }
     const maxGames = normalizeMaxGames(settings.maxGames);
     const filters = { ...DEFAULT_FILTERS, ...settings.gameFilters };
@@ -119,6 +145,7 @@ async function runCheck() {
     const nowMs = Date.now();
     const windowStart = getWindowStart(nowMs, resetMode);
     const { sessionDisabled } = await extensionApi.storage.session.get({ sessionDisabled: false });
+    const breakUntil = await activeBreak(nowMs);
     const { losses, oldestCountedLoss } = countLosses(games, username, windowStart, filters);
     const nextReset = getNextReset(nowMs, resetMode, oldestCountedLoss);
 
@@ -128,9 +155,9 @@ async function runCheck() {
     await extensionApi.storage.local.set({
         losses,
         nextReset,
-        blocked: !sessionDisabled && losses >= maxGames
+        blocked: !sessionDisabled && (losses >= maxGames || breakUntil !== null)
     });
-    await scheduleResetAlarm(nextReset);
+    await scheduleResetAlarm(earliest(nextReset, breakUntil));
 }
 
 // Checks are triggered from many places (tabs, the popup, alarms, startup)
@@ -174,6 +201,18 @@ async function recordProvisionalLoss() {
     }
 }
 
+// "Block after this game" from the popup. The content script decides when
+// the block actually appears: right away, or once the current game ends.
+async function startBreak() {
+    await extensionApi.storage.local.set({ breakUntil: Date.now() + BREAK_DURATION_MS });
+    await checkGamesPlayed();
+}
+
+async function endBreak() {
+    await extensionApi.storage.local.remove('breakUntil');
+    await checkGamesPlayed();
+}
+
 // Re-check whenever a tab lands on a game or play page. The content script
 // also asks on injection; this catches chess.com's in-page navigation, which
 // changes the URL without re-injecting anything.
@@ -209,5 +248,9 @@ extensionApi.runtime.onMessage.addListener((request) => {
         checkGamesPlayed();
     } else if (request.action === 'LOSS_DETECTED') {
         recordProvisionalLoss();
+    } else if (request.action === 'startBreak') {
+        startBreak();
+    } else if (request.action === 'endBreak') {
+        endBreak();
     }
 });

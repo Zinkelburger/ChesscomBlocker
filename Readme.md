@@ -35,17 +35,20 @@ This produces `dist/chrome` and `dist/firefox`.
 3. Select `dist/firefox/manifest.json`.
 
 ## Usage
-Click the extension. Input your username and the max number of games you wish to play. Once you exceed the number of games played, the chess.com/play/online page will be blocked. 
+Click the extension, open **Settings** and enter your chess.com username and the max number of losses. Once you reach that many losses, the chess.com game and play pages are blocked.
 
-It is blocked until you no longer have have X losses in the current window.
+They stay blocked until you no longer have that many losses in the current window.
+
+### Ending a session early
+**Block after this game** blocks the play pages for one hour, no matter how many losses you have. If a game is running when you click it, the block waits for that game to finish. Click **End break** to lift it early.
 
 ### When the counter resets
-The gear menu has a **Counter Reset** setting with two choices:
+**Counter resets** under Settings has two choices:
 
-+ **Last 24 hours** (default) — a rolling window. Each loss stops counting 24 hours after that game ended, so the counter drains gradually.
++ **24 hours after each loss** (default) — a rolling window. Each loss stops counting 24 hours after that game ended, so the counter drains gradually.
 + **At midnight** — the counter covers the current calendar day and clears at 00:00.
 
-Midnight is read from your computer's clock, so it follows whatever timezone the machine is set to (and handles daylight saving changes on its own). The popup shows which timezone it resolved to, plus a countdown to the next reset.
+Midnight is read from your computer's clock, so it follows whatever timezone the machine is set to (and handles daylight saving changes on its own). The popup shows a countdown to the next reset.
 
 Either way the extension schedules an alarm for the moment the window rolls over, so a block lifts by itself instead of waiting for you to click something; an open chess.com tab showing the block notice reloads on its own.
 
