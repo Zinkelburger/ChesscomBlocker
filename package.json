@@ -1,6 +1,6 @@
 {
   "name": "chesscom-blocker",
-  "version": "2.4.0",
+  "version": "2.4.1",
   "description": "Browser extension to limit chess games after too many losses",
   "scripts": {
     "build": "node scripts/build.js",

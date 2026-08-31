@@ -15,20 +15,30 @@ const API_CATCH_UP_DELAY_MS = 15000;
 // pairs the pre-2026 markup with the "v6" game-over modal, since chess.com
 // rolls redesigns out gradually.
 const BOARD_SELECTOR = '.player-component.player-bottom';
-const GAME_OVER_SELECTOR = '.player-game-over-component, .game-over-modal-shell-content';
+// The pre-2026 card is nothing but the player box's rating summary - no
+// result text at all - and chess.com renders it when a finished game is
+// merely *opened* from the archive, not only when one ends. It is believed
+// only on a URL whose game was seen being played (liveGameSeenHere below);
+// anywhere else its delta describes some other game, or nothing.
+const OLD_CARD_SELECTOR = '.player-game-over-component';
+// When a game ends live, chess.com renders BOTH: the old card in the player
+// box and the v6 modal over the page, and the old card tends to land first.
+// Whichever one trips the observer, the modal is what gets read whenever it
+// is up (see reportGameOver) - it states the result, the card never does.
+const MODAL_SELECTOR = '.game-over-modal-shell-content';
+const GAME_OVER_SELECTOR = `${OLD_CARD_SELECTOR}, ${MODAL_SELECTOR}`;
 const RATING_CHANGE_SELECTOR =
     '.rating-score-change, .game-over-stat-card-rating .game-over-stat-card-delta.game-over-stat-card-deltaRevealed';
 
 // The v6 modal states the result outright: the header carries a class like
 // "game-over-modal-header-userWon" and the title reads "You Won!" - but only
 // for a win. A loss names the winner by colour instead ("White Won", header
-// class game-over-modal-header-whiteWon), which detectLoss reads through the
-// user's own rating delta first: the delta cannot be turned around by
-// flipping the board, which the .flipped class here can (chess.com applies it
-// for a hand-flipped board exactly as for playing black).
+// class game-over-modal-header-whiteWon). The colour never needs translating
+// into a side of the board: the user's own win is always phrased as "You
+// Won!", so on the user's own game a winner named by colour can only be the
+// opponent.
 const RESULT_HEADER_SELECTOR = '.game-over-modal-header-component';
 const RESULT_TITLE_SELECTOR = '.game-over-modal-title-component';
-const FLIPPED_BOARD_SELECTOR = 'wc-chess-board.flipped, chess-board.flipped, .board.flipped';
 
 // Present in the card only when the finished game was a rated game of ours
 const RATED_GAME_SELECTOR = '.rating-score-change, .game-over-stat-card-rating';
@@ -85,6 +95,16 @@ let blockAfterGame = false;
 // leaves the board on screen with no card, which would otherwise look like a
 // game still being played and hold a block back until the next navigation.
 let gameOverSeenHere = false;
+
+// Whether this URL's game was ever seen live (resign/draw buttons, a ticking
+// clock). Checked at injection and once a second by urlWatch - the controls
+// are up for a game's whole length, so the tick cannot miss them. This is
+// what separates a game ending here from a finished game merely being looked
+// at, where the only game-over markup is the bare old card. The v6 modal is
+// not held to this: it only appears when a game actually ends, and gating it
+// on selectors chess.com could rename would fail toward losses never being
+// counted - the wrong direction for a blocker.
+let liveGameSeenHere = false;
 
 // The deadline the popup's 1-hour block runs to, or null if this block is the
 // limit instead. A 1-hour block asked for in the popup stays pending until the
@@ -228,6 +248,10 @@ function blockIfNeeded(blocked, { waitForGameEnd = false } = {}) {
     showBlockedPage();
 }
 
+// A reload in the middle of a game: the controls are already up when the
+// script arrives, before the first urlWatch tick looks for them
+liveGameSeenHere = document.querySelector(LIVE_GAME_SELECTOR) !== null;
+
 // Ask for a fresh count, and apply whatever the last one decided in the meantime
 sendToBackground({ action: 'checkGamesPlayed' });
 extensionApi.storage.local.get({ blocked: false }).then((items) => blockIfNeeded(items.blocked));
@@ -311,6 +335,18 @@ function handleGameOver(card) {
     gameOverSeenHere = true;
     debugLog('game over: card appeared', card.className);
 
+    // The bare old card on a page whose game was never live is a finished
+    // game being viewed, not a game ending: opening one from the archive
+    // renders the same card, and reporting it would record a phantom game
+    // timed now - which the archive can never reconcile, since the real game
+    // ended long ago. gameOverSeenHere stays set: the game here is indeed
+    // over, so a block must not wait on it.
+    if (card.matches(OLD_CARD_SELECTOR) && !liveGameSeenHere) {
+        debugLog('game over: ignoring the bare card - no game was ever live'
+            + ' on this URL, so this is a finished game being viewed');
+        return;
+    }
+
     const reported = reportGameOver(card, lastGameOverAt);
     setTimeout(() => sendToBackground({ action: 'checkGamesPlayed' }), API_CATCH_UP_DELAY_MS);
 
@@ -359,34 +395,30 @@ function detectLoss(card, lastTry = false) {
         return false;
     }
 
-    // A result stated by colour - which is all the modal offers when the user
-    // loses - is read off the user's own rating delta: the game was decisive,
-    // so the delta's sign alone says which side of it the user was on. The
-    // board's .flipped class would say which colour they played, but a board
-    // flipped by hand carries the same class and would turn every result on
-    // its head - so it is only believed once the delta has had its whole
-    // reveal animation's worth of polling to appear.
-    const winner = /whitewon/i.test(headerClass) || /white won/i.test(title) ? 'white'
-        : /blackwon/i.test(headerClass) || /black won/i.test(title) ? 'black'
-            : null;
-    if (winner !== null) {
-        const ratingChange = readRatingChange(card);
-        if (ratingChange !== null) {
-            return ratingChange < 0;
-        }
-        if (!lastTry) {
-            return null;
-        }
-        const played = document.querySelector(FLIPPED_BOARD_SELECTOR) === null ? 'white' : 'black';
-        return winner !== played;
+    // A winner named by colour is the user's loss, no delta needed: the
+    // rated-game marker above says this is the user's own game, their own win
+    // is always phrased "You Won!", and a draw was caught as "Draw" - so the
+    // colour can only be the opponent's. Skipping the delta also means not
+    // waiting out its reveal animation, and not misreading the floored-at-100
+    // delta of 0 that a loss leaves behind.
+    if (/whitewon|blackwon/i.test(headerClass) || /white won|black won/i.test(title)) {
+        return true;
     }
 
-    // No stated result at all: the old card only ever offered the delta
+    // No stated result at all: the bare old card offers only the delta. A
+    // clearly negative delta is a loss whatever else renders; anything milder
+    // is ambiguous - at the 100 floor a loss moves the rating no further than
+    // a draw does - so keep polling and let the modal, which states the
+    // result, appear and outrank this card (see reportGameOver). Only once
+    // the polling is exhausted is a mild delta taken at face value.
     const ratingChange = readRatingChange(card);
     if (ratingChange === null) {
         return null;
     }
-    return ratingChange < LOSS_RATING_CHANGE;
+    if (ratingChange < LOSS_RATING_CHANGE) {
+        return true;
+    }
+    return lastTry ? false : null;
 }
 
 // Tell the background a game just ended, timing it at `seenAt` - when its card
@@ -400,7 +432,11 @@ function detectLoss(card, lastTry = false) {
 // than giving up. Resolves once the game has been reported or given up on, so
 // a block waiting on it knows when the card has been read for the last time.
 function reportGameOver(card, seenAt, attempt = 0) {
-    const current = card.isConnected ? card : (document.querySelector(GAME_OVER_SELECTOR) ?? card);
+    // The modal outranks the old card even when the card is what tripped the
+    // observer: rechecked on every poll, so a modal that renders moments
+    // after the card is still the one that gets read.
+    const modal = document.querySelector(MODAL_SELECTOR);
+    const current = modal ?? (card.isConnected ? card : (document.querySelector(GAME_OVER_SELECTOR) ?? card));
     const lost = detectLoss(current, attempt >= RATING_POLL_ATTEMPTS);
     if (lost === null) {
         if (attempt >= RATING_POLL_ATTEMPTS) {
@@ -523,15 +559,20 @@ window.addEventListener('message', (event) => {
 // being dodged by starting a new game in-page.
 let lastHref = window.location.href;
 const urlWatch = setInterval(() => {
-    if (window.location.href === lastHref) {
-        return;
+    if (window.location.href !== lastHref) {
+        lastHref = window.location.href;
+        // A new URL is a new game: let its card be handled afresh, and let it
+        // prove it is live all over again
+        gameOverSeenHere = false;
+        lastGameOverAt = 0;
+        liveGameSeenHere = false;
+        if (blockAfterGame) {
+            blockAfterGame = false;
+            blockIfNeeded(true);
+        }
     }
-    lastHref = window.location.href;
-    // A new URL is a new game: let its card be handled afresh
-    gameOverSeenHere = false;
-    lastGameOverAt = 0;
-    if (blockAfterGame) {
-        blockAfterGame = false;
-        blockIfNeeded(true);
+    if (!liveGameSeenHere && document.querySelector(LIVE_GAME_SELECTOR) !== null) {
+        liveGameSeenHere = true;
+        debugLog('a live game is being played on this URL');
     }
 }, 1000);
