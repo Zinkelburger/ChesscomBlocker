@@ -1,6 +1,6 @@
 // Runs on chess.com game and play pages: swaps the page for a "take a break"
 // notice when the loss limit is hit (or a break was started from the popup),
-// and tells the background script about losses as soon as they happen so the
+// and tells the background script about games as soon as they end so the
 // block does not wait on the API.
 
 // Rating changes below this are treated as a loss rather than a draw
@@ -99,12 +99,12 @@ function handleMutations(mutationsList) {
                 showBlockedPage();
                 return;
             }
+            // No rating change means this is not a rated game of the bottom
+            // player's, so it is not ours to count.
             const ratingChangeElement = addedNode.querySelector('.rating-score-change');
             if (ratingChangeElement) {
                 const ratingChange = Number.parseInt(ratingChangeElement.textContent.trim(), 10);
-                if (ratingChange < LOSS_RATING_CHANGE) {
-                    sendToBackground({ action: 'LOSS_DETECTED' });
-                }
+                sendToBackground({ action: 'GAME_OVER', lost: ratingChange < LOSS_RATING_CHANGE });
             }
             setTimeout(() => sendToBackground({ action: 'checkGamesPlayed' }), API_CATCH_UP_DELAY_MS);
         }

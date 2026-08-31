@@ -30,6 +30,19 @@ const DEFAULT_RESET_MODE = 'rolling';
 
 const DEFAULT_MAX_GAMES = 5;
 
+// What trips the block:
+//   'losses' - N losses inside the reset window (the original behaviour)
+//   'games'  - N games of any result inside the reset window
+//   'rating' - the current rating of any tracked time control leaves the
+//              [ratingFloor, ratingCeiling] range; no window involved
+const BLOCK_MODES = ['losses', 'games', 'rating'];
+const DEFAULT_BLOCK_MODE = 'losses';
+
+// The chess.com stats endpoint keys ratings as chess_<time_class>. Only
+// standard chess has per-time-control ratings there, so the rating mode
+// tracks the enabled time controls of standard chess.
+const RATED_TIME_CLASSES = ['bullet', 'blitz', 'rapid', 'daily'];
+
 const DAY_SECONDS = 86400;
 
 // The popup stores whatever is in the number input, so treat anything that is
@@ -38,6 +51,46 @@ const DAY_SECONDS = 86400;
 function normalizeMaxGames(value, fallback = DEFAULT_MAX_GAMES) {
     const parsed = Number(value);
     return Number.isInteger(parsed) && parsed >= 1 ? parsed : fallback;
+}
+
+function normalizeBlockMode(value) {
+    return BLOCK_MODES.includes(value) ? value : DEFAULT_BLOCK_MODE;
+}
+
+// A rating bound is optional: anything that is not a positive whole number
+// means "no bound on this side".
+function normalizeRatingBound(value) {
+    const parsed = Number(value);
+    return Number.isInteger(parsed) && parsed >= 1 ? parsed : null;
+}
+
+// Pull the current ratings out of a /pub/player/<name>/stats response, for
+// the time controls the filters track. Returns { blitz: 1234, ... } with an
+// entry only for time controls the player actually has a rating in.
+function currentRatings(stats, filters = DEFAULT_FILTERS) {
+    const ratings = {};
+    for (const timeClass of RATED_TIME_CLASSES) {
+        if (filters[timeClass] !== true) {
+            continue;
+        }
+        const rating = stats?.[`chess_${timeClass}`]?.last?.rating;
+        if (typeof rating === 'number') {
+            ratings[timeClass] = rating;
+        }
+    }
+    return ratings;
+}
+
+// A rating is out of range if it fell below the floor or rose above the
+// ceiling, matching the "Falls below" / "Rises above" wording in the popup:
+// the bounds themselves are still allowed. A null bound is ignored.
+function ratingOutOfRange(rating, floor, ceiling) {
+    return (floor !== null && rating < floor) || (ceiling !== null && rating > ceiling);
+}
+
+// The time controls whose rating has left the range, in filter order
+function ratingsOutOfRange(ratings, floor, ceiling) {
+    return Object.keys(ratings).filter((key) => ratingOutOfRange(ratings[key], floor, ceiling));
 }
 
 // A mode written by a newer build (or a corrupted value) falls back to the
@@ -113,12 +166,15 @@ function archiveMonths(windowStart, nowMs) {
 // chess.com API, so walking backwards lets us stop at the first game that falls
 // outside the window.
 //
-// Returns { losses, oldestCountedLoss }, where oldestCountedLoss is the
-// end_time of the earliest loss still being counted (null if there are none).
+// Returns { losses, games, oldestCountedLoss, oldestCountedGame }, where the
+// oldestCounted* fields are the end_time of the earliest loss / game still
+// being counted (null if there are none).
 function countLosses(games, username, windowStart, filters = DEFAULT_FILTERS) {
     const lowerUsername = username.toLowerCase();
     let losses = 0;
+    let played = 0;
     let oldestCountedLoss = null;
+    let oldestCountedGame = null;
 
     for (let i = games.length - 1; i >= 0; i--) {
         const game = games[i];
@@ -137,15 +193,22 @@ function countLosses(games, username, windowStart, filters = DEFAULT_FILTERS) {
             continue;
         }
 
-        const lostAsWhite = game.white.username.toLowerCase() === lowerUsername && game.black.result === 'win';
-        const lostAsBlack = game.black.username.toLowerCase() === lowerUsername && game.white.result === 'win';
-        if (lostAsWhite || lostAsBlack) {
+        const playedAsWhite = game.white.username.toLowerCase() === lowerUsername;
+        const playedAsBlack = game.black.username.toLowerCase() === lowerUsername;
+        if (!playedAsWhite && !playedAsBlack) {
+            continue;
+        }
+        played++;
+        oldestCountedGame = game.end_time;
+
+        const lost = (playedAsWhite && game.black.result === 'win') || (playedAsBlack && game.white.result === 'win');
+        if (lost) {
             losses++;
             oldestCountedLoss = game.end_time;
         }
     }
 
-    return { losses, oldestCountedLoss };
+    return { losses, games: played, oldestCountedLoss, oldestCountedGame };
 }
 
 // Export for the Node tests; harmless in the browser
@@ -155,9 +218,17 @@ if (typeof module !== 'undefined' && module.exports) {
         RESET_MODES,
         DEFAULT_RESET_MODE,
         DEFAULT_MAX_GAMES,
+        BLOCK_MODES,
+        DEFAULT_BLOCK_MODE,
+        RATED_TIME_CLASSES,
         DAY_SECONDS,
         normalizeMaxGames,
         normalizeResetMode,
+        normalizeBlockMode,
+        normalizeRatingBound,
+        currentRatings,
+        ratingOutOfRange,
+        ratingsOutOfRange,
         gameMatchesFilters,
         getWindowStart,
         getNextReset,

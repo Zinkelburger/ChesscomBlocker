@@ -35,17 +35,25 @@ This produces `dist/chrome` and `dist/firefox`.
 3. Select `dist/firefox/manifest.json`.
 
 ## Usage
-Click the extension, open **Settings** and enter your chess.com username and the max number of losses. Once you reach that many losses, the chess.com game and play pages are blocked.
+Click the extension and enter your chess.com username (a tick confirms it exists). The main panel shows how many losses you have against your limit; change the limit right there. Once you reach it, the chess.com game and play pages are blocked, and stay blocked until you no longer have that many losses in the current window.
 
-They stay blocked until you no longer have that many losses in the current window.
+### Block modes
+**Block when** under Settings (the gear) picks what trips the block:
+
++ **Losses** (default) — N losses in the current window.
++ **Games** — N games of any result in the current window.
++ **Rating** — your current rating (from chess.com's stats) falls to or below a floor, or rises to or above a ceiling. Either bound can be left empty. The range applies to every tracked time control, there is no window and nothing to reset: the block lifts when the rating is back inside the range or you change the bounds.
+
+### Pausing
+**Pause** on the main panel switches the extension off without uninstalling it; **Resume** turns it back on. By default a pause ends when the browser restarts; turn off **Unpause on restart** under Settings › Pause to keep it paused.
 
 ### Ending a session early
 **Block after this game** blocks the play pages for one hour, no matter how many losses you have. If a game is running when you click it, the block waits for that game to finish. Click **End break** to lift it early.
 
 ### When the counter resets
-**Counter resets** under Settings has two choices:
+**Resets** under Settings has two choices:
 
-+ **24 hours after each loss** (default) — a rolling window. Each loss stops counting 24 hours after that game ended, so the counter drains gradually.
++ **Every 24h** (default) — a rolling window. Each loss stops counting 24 hours after that game ended, so the counter drains gradually.
 + **At midnight** — the counter covers the current calendar day and clears at 00:00.
 
 Midnight is read from your computer's clock, so it follows whatever timezone the machine is set to (and handles daylight saving changes on its own). The popup shows a countdown to the next reset.
@@ -76,18 +84,21 @@ docs/         screenshots
 The version number lives only in `package.json`; bump it there and rebuild.
 
 ## How the code works
-To get the number of losses, I:
+The model is one sentence: *within the current window, block once the chosen limit is reached*. To evaluate it, I:
 + Work out where the counting window starts (24 hours ago, or local midnight)
 + Fetch the user's monthly game archives from the chess.com API for every month the window touches (usually one, two right after a month boundary), using ETags so unchanged archives are not re-downloaded
-+ Count the losses inside that window
++ Count the games and the losses inside that window (`countLosses` in `lossCounter.js`)
++ Compare the count the block mode cares about against the limit
 
-This loss check is triggered after a game ends, when a chess.com game or play page is opened, and from the popup whenever a setting changes.
+In **Rating** mode there is no window: the current ratings come from the `/stats` endpoint instead, and the block is on while any tracked rating is outside the floor/ceiling range (`ratingsOutOfRange`).
 
-If the number of losses is at or above the max, the game page content is replaced with a notice.
+This check is triggered after a game ends, when a chess.com game or play page is opened, and from the popup whenever a setting changes.
 
-An alarm is also set for the moment the window rolls over — the next local midnight, or 24 hours after the oldest loss that is still being counted — so the losses are re-counted and the block lifts without any user action.
+If the limit is reached, the game page content is replaced with a notice.
 
-There is also the case where your game ends but the chess.com api hasn't updated yet. I handle it by using a mutation observer on `.player-component.player-bottom`. I look for the player game over component, and specifically parse the `.rating-score-change` class. If `current # of losses` + 1 >= `maxGames` then the user is blocked immediately, and I don't have to wait for the chess.com API to update.
+An alarm is also set for the moment the window rolls over — the next local midnight, or 24 hours after the oldest counted loss (oldest counted game, in **Games** mode) — so the counts are refreshed and the block lifts without any user action.
+
+There is also the case where your game ends but the chess.com api hasn't updated yet. I handle it by using a mutation observer on `.player-component.player-bottom`. I look for the player game over component, and parse the `.rating-score-change` class. The background adds that game to the last counts it computed (`recordProvisionalGame`) and, if that reaches the limit, blocks immediately rather than waiting for the chess.com API to update.
 
 ## License
 This project uses the GPL3 License (LICENSE.md).

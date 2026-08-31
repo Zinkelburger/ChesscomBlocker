@@ -8,53 +8,181 @@
 </head>
 
 <body>
-    <h1>Chess Blocker</h1>
+    <!-- Icons, referenced with <use> below -->
+    <svg hidden xmlns="http://www.w3.org/2000/svg">
+        <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></symbol>
+        <symbol id="i-back" viewBox="0 0 24 24"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></symbol>
+        <symbol id="i-chevron" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></symbol>
+        <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></symbol>
+        <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></symbol>
+        <symbol id="i-pause" viewBox="0 0 24 24"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></symbol>
+        <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 4.5v15a1 1 0 0 0 1.5.86l12-7.5a1 1 0 0 0 0-1.72l-12-7.5A1 1 0 0 0 7 4.5z"/></symbol>
+    </svg>
 
-    <p class="count"><span id="num-losses">0</span> / <span id="max-losses">5</span> losses</p>
-    <p class="note" id="reset-note"></p>
-
-    <button id="break-btn" type="button">Block after this game</button>
-    <p class="note" id="break-note"></p>
-
-    <label class="row">
-        <input type="checkbox" id="session-disable">
-        Pause until browser restarts
-    </label>
-
-    <details>
-        <summary>Settings</summary>
-
-        <label>Chess.com username
-            <input type="text" id="username" autocomplete="off" spellcheck="false">
+    <!-- ============ First run ============ -->
+    <section class="view" data-view="setup" hidden>
+        <header class="bar">
+            <span class="brand"><img class="logo" src="icons/icon-48.png" alt="">Chess Blocker</span>
+        </header>
+        <label class="field">
+            <span>Chess.com username</span>
+            <span class="input-wrap">
+                <input type="text" data-username autocomplete="off" spellcheck="false" autofocus>
+                <span class="status-icon" data-username-status></span>
+            </span>
         </label>
-        <label>Max losses
-            <input type="number" id="max-games" min="1" step="1">
+        <button class="primary" id="start-btn" type="button" disabled>Start blocking</button>
+    </section>
+
+    <!-- ============ Main ============ -->
+    <section class="view" data-view="main" hidden>
+        <header class="bar">
+            <span class="brand"><img class="logo" src="icons/icon-48.png" alt="">Chess Blocker</span>
+            <button class="icon-btn" data-go="settings" title="Settings" type="button"><svg class="icon"><use href="#i-gear"/></svg></button>
+        </header>
+
+        <div class="status" id="status">
+            <span class="status-left"><span class="dot"></span><span id="status-text">Active</span></span>
+            <button class="pill" id="pause-btn" type="button">
+                <svg class="icon small"><use id="pause-icon" href="#i-pause"/></svg><span id="pause-label">Pause</span>
+            </button>
+        </div>
+
+        <div class="limit-row">
+            <span class="label">Block at</span>
+            <span class="limit-count" id="limit-count">
+                <input type="number" class="num" data-max-games min="1" step="1">
+                <span class="muted" id="limit-unit">losses</span>
+            </span>
+            <span class="limit-range" id="limit-range" hidden></span>
+        </div>
+
+        <div class="card">
+            <div class="card-head">
+                <span class="eyebrow" id="card-title">Losses</span>
+                <span class="big" id="card-value"></span>
+            </div>
+            <div class="bar-track" id="card-bar"><div class="bar-fill" id="card-fill"></div></div>
+            <div class="rating-list" id="rating-list"></div>
+            <span class="note" id="card-note"></span>
+        </div>
+
+        <button class="secondary" id="break-btn" type="button">Block after this game</button>
+    </section>
+
+    <!-- ============ Settings list ============ -->
+    <section class="view" data-view="settings" hidden>
+        <header class="bar">
+            <button class="icon-btn back" data-go="main" type="button"><svg class="icon"><use href="#i-back"/></svg></button>
+            <span class="title">Settings</span>
+        </header>
+        <div class="list">
+            <button class="row" data-go="username" type="button"><span>Username</span><span class="value" id="v-username"></span><svg class="icon chev"><use href="#i-chevron"/></svg></button>
+            <button class="row" data-go="block" type="button"><span>Block when</span><span class="value" id="v-block"></span><svg class="icon chev"><use href="#i-chevron"/></svg></button>
+            <button class="row" data-go="reset" type="button"><span>Resets</span><span class="value" id="v-reset"></span><svg class="icon chev"><use href="#i-chevron"/></svg></button>
+            <button class="row" data-go="pause" type="button"><span>Pause</span><span class="value" id="v-pause"></span><svg class="icon chev"><use href="#i-chevron"/></svg></button>
+            <button class="row" data-go="games" type="button"><span>Games</span><span class="value" id="v-games"></span><svg class="icon chev"><use href="#i-chevron"/></svg></button>
+        </div>
+    </section>
+
+    <!-- ============ Settings > Username ============ -->
+    <section class="view" data-view="username" hidden>
+        <header class="bar">
+            <button class="icon-btn back" data-go="settings" type="button"><svg class="icon"><use href="#i-back"/></svg></button>
+            <span class="title">Username</span>
+        </header>
+        <label class="field">
+            <span>Chess.com username</span>
+            <span class="input-wrap">
+                <input type="text" data-username autocomplete="off" spellcheck="false">
+                <span class="status-icon" data-username-status></span>
+            </span>
         </label>
+    </section>
 
-        <fieldset>
-            <legend>Counter resets</legend>
-            <label class="row"><input type="radio" name="reset-mode" data-reset-mode="rolling"> 24 hours after each loss</label>
-            <label class="row"><input type="radio" name="reset-mode" data-reset-mode="midnight"> At midnight</label>
-        </fieldset>
+    <!-- ============ Settings > Block when ============ -->
+    <section class="view" data-view="block" hidden>
+        <header class="bar">
+            <button class="icon-btn back" data-go="settings" type="button"><svg class="icon"><use href="#i-back"/></svg></button>
+            <span class="title">Block when</span>
+        </header>
+        <div class="segmented">
+            <label><input type="radio" name="block-mode" value="losses"><span>Losses</span></label>
+            <label><input type="radio" name="block-mode" value="games"><span>Games</span></label>
+            <label><input type="radio" name="block-mode" value="rating"><span>Rating</span></label>
+        </div>
 
-        <fieldset>
-            <legend>Time controls</legend>
-            <label class="row"><input type="checkbox" data-filter="bullet"> Bullet</label>
-            <label class="row"><input type="checkbox" data-filter="blitz"> Blitz</label>
-            <label class="row"><input type="checkbox" data-filter="rapid"> Rapid</label>
-            <label class="row"><input type="checkbox" data-filter="daily"> Daily</label>
-        </fieldset>
+        <div id="block-count">
+            <div class="setting-row">
+                <span>I reach</span>
+                <span class="limit-count"><input type="number" class="num" data-max-games min="1" step="1"><span class="muted" id="block-unit">losses</span></span>
+            </div>
+        </div>
 
-        <fieldset>
-            <legend>Variants</legend>
-            <label class="row"><input type="checkbox" data-filter="chess"> Standard</label>
-            <label class="row"><input type="checkbox" data-filter="chess960"> Chess960</label>
-            <label class="row"><input type="checkbox" data-filter="bughouse"> Bughouse</label>
-            <label class="row"><input type="checkbox" data-filter="crazyhouse"> Crazyhouse</label>
-            <label class="row"><input type="checkbox" data-filter="threecheck"> 3-Check</label>
-            <label class="row"><input type="checkbox" data-filter="kingofthehill"> King of the Hill</label>
-        </fieldset>
-    </details>
+        <div id="block-rating" hidden>
+            <div class="setting-row">
+                <span>Falls below</span>
+                <input type="number" class="num wide" id="rating-floor" min="1" step="1" placeholder="—" title="Empty = no lower limit">
+            </div>
+            <div class="setting-row">
+                <span>Rises above</span>
+                <input type="number" class="num wide" id="rating-ceiling" min="1" step="1" placeholder="—" title="Empty = no upper limit">
+            </div>
+            <div class="currently">
+                <span class="eyebrow">Currently</span>
+                <div class="rating-list" id="settings-rating-list"></div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ============ Settings > Resets ============ -->
+    <section class="view" data-view="reset" hidden>
+        <header class="bar">
+            <button class="icon-btn back" data-go="settings" type="button"><svg class="icon"><use href="#i-back"/></svg></button>
+            <span class="title">Resets</span>
+        </header>
+        <div class="segmented">
+            <label><input type="radio" name="reset-mode" value="rolling"><span>Every 24h</span></label>
+            <label><input type="radio" name="reset-mode" value="midnight"><span>At midnight</span></label>
+        </div>
+        <p class="note" id="reset-hint"></p>
+    </section>
+
+    <!-- ============ Settings > Pause ============ -->
+    <section class="view" data-view="pause" hidden>
+        <header class="bar">
+            <button class="icon-btn back" data-go="settings" type="button"><svg class="icon"><use href="#i-back"/></svg></button>
+            <span class="title">Pause</span>
+        </header>
+        <label class="setting-row">
+            <span>Unpause on restart</span>
+            <span class="switch"><input type="checkbox" id="unpause-restart"><span class="knob"></span></span>
+        </label>
+    </section>
+
+    <!-- ============ Settings > Games ============ -->
+    <section class="view" data-view="games" hidden>
+        <header class="bar">
+            <button class="icon-btn back" data-go="settings" type="button"><svg class="icon"><use href="#i-back"/></svg></button>
+            <span class="title">Games</span>
+        </header>
+        <span class="eyebrow">Time controls</span>
+        <div class="chips">
+            <label class="chip"><input type="checkbox" data-filter="bullet"><span>Bullet</span></label>
+            <label class="chip"><input type="checkbox" data-filter="blitz"><span>Blitz</span></label>
+            <label class="chip"><input type="checkbox" data-filter="rapid"><span>Rapid</span></label>
+            <label class="chip"><input type="checkbox" data-filter="daily"><span>Daily</span></label>
+        </div>
+        <span class="eyebrow">Variants</span>
+        <div class="chips">
+            <label class="chip"><input type="checkbox" data-filter="chess"><span>Standard</span></label>
+            <label class="chip"><input type="checkbox" data-filter="chess960"><span>Chess960</span></label>
+            <label class="chip"><input type="checkbox" data-filter="bughouse"><span>Bughouse</span></label>
+            <label class="chip"><input type="checkbox" data-filter="crazyhouse"><span>Crazyhouse</span></label>
+            <label class="chip"><input type="checkbox" data-filter="threecheck"><span>3-Check</span></label>
+            <label class="chip"><input type="checkbox" data-filter="kingofthehill"><span>King of the Hill</span></label>
+        </div>
+    </section>
 
     <script src="shared.js"></script>
     <script src="lossCounter.js"></script>

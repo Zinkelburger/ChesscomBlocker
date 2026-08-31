@@ -13,6 +13,11 @@ const {
     DAY_SECONDS,
     normalizeMaxGames,
     normalizeResetMode,
+    normalizeBlockMode,
+    normalizeRatingBound,
+    currentRatings,
+    ratingOutOfRange,
+    ratingsOutOfRange,
     gameMatchesFilters,
     getWindowStart,
     getNextReset,
@@ -400,4 +405,81 @@ test('a midnight window starting in the previous UTC month still fetches it', ()
     const now = Date.UTC(2024, 5, 1, 2, 0);
     const windowStart = Math.floor(Date.UTC(2024, 4, 31, 22, 0) / 1000);
     assert.deepStrictEqual(archiveMonths(windowStart, now), ['2024/05', '2024/06']);
+});
+
+// ============ Games count ============
+
+test('countLosses also counts every game the user played in the window', () => {
+    const mostRecentGame = mockData.games[mockData.games.length - 1];
+    const result = countLosses(mockData.games, 'BigManArkhangelsk', rollingWindow(mostRecentGame.end_time + 100));
+    assert.strictEqual(result.games, 5);
+    assert.strictEqual(result.losses, 3);
+    assert.strictEqual(result.oldestCountedGame, mockData.games[0].end_time);
+});
+
+test('games count ignores games the user did not play', () => {
+    const mostRecentGame = mockData.games[mockData.games.length - 1];
+    const result = countLosses(mockData.games, 'someoneelse', rollingWindow(mostRecentGame.end_time + 100));
+    assert.strictEqual(result.games, 0);
+    assert.strictEqual(result.oldestCountedGame, null);
+});
+
+// ============ Block modes and ratings ============
+
+test('normalizeBlockMode keeps known modes and defaults the rest', () => {
+    assert.strictEqual(normalizeBlockMode('games'), 'games');
+    assert.strictEqual(normalizeBlockMode('rating'), 'rating');
+    assert.strictEqual(normalizeBlockMode('elo'), 'losses');
+    assert.strictEqual(normalizeBlockMode(undefined), 'losses');
+});
+
+test('normalizeRatingBound treats blanks and junk as no bound', () => {
+    assert.strictEqual(normalizeRatingBound('2200'), 2200);
+    assert.strictEqual(normalizeRatingBound(1500), 1500);
+    assert.strictEqual(normalizeRatingBound(''), null);
+    assert.strictEqual(normalizeRatingBound(null), null);
+    assert.strictEqual(normalizeRatingBound(0), null);
+    assert.strictEqual(normalizeRatingBound('abc'), null);
+});
+
+const stats = {
+    chess_bullet: { last: { rating: 1900 } },
+    chess_blitz: { last: { rating: 2163 } },
+    chess_rapid: { last: { rating: 2150 } },
+    chess_daily: { last: { rating: 1700 } },
+    chess960_daily: { last: { rating: 1600 } }
+};
+
+test('currentRatings picks the tracked time controls out of the stats response', () => {
+    assert.deepStrictEqual(currentRatings(stats, DEFAULT_FILTERS), { bullet: 1900, blitz: 2163, rapid: 2150 });
+    assert.deepStrictEqual(currentRatings(stats, { ...DEFAULT_FILTERS, bullet: false, daily: true }), {
+        blitz: 2163, rapid: 2150, daily: 1700
+    });
+});
+
+test('currentRatings copes with an empty or partial stats response', () => {
+    assert.deepStrictEqual(currentRatings({}, DEFAULT_FILTERS), {});
+    assert.deepStrictEqual(currentRatings(null, DEFAULT_FILTERS), {});
+    assert.deepStrictEqual(currentRatings({ chess_blitz: {} }, DEFAULT_FILTERS), {});
+});
+
+test('a rating is out of range only beyond either bound, never on it', () => {
+    assert.strictEqual(ratingOutOfRange(2163, 2150, 2200), false);
+    // The bounds themselves are allowed, matching "Falls below" / "Rises above"
+    assert.strictEqual(ratingOutOfRange(2150, 2150, 2200), false);
+    assert.strictEqual(ratingOutOfRange(2200, 2150, 2200), false);
+    assert.strictEqual(ratingOutOfRange(2149, 2150, 2200), true);
+    assert.strictEqual(ratingOutOfRange(2201, 2150, 2200), true);
+    assert.strictEqual(ratingOutOfRange(1000, null, 2200), false);
+    assert.strictEqual(ratingOutOfRange(3000, 2150, null), false);
+    assert.strictEqual(ratingOutOfRange(3000, null, null), false);
+});
+
+test('ratingsOutOfRange lists the time controls that tripped', () => {
+    // bullet 1900, blitz 2163, rapid 2150
+    const ratings = currentRatings(stats, DEFAULT_FILTERS);
+    assert.deepStrictEqual(ratingsOutOfRange(ratings, 2150, 2200), ['bullet']);
+    assert.deepStrictEqual(ratingsOutOfRange(ratings, 1800, 2160), ['blitz']);
+    assert.deepStrictEqual(ratingsOutOfRange(ratings, null, 2000), ['blitz', 'rapid']);
+    assert.deepStrictEqual(ratingsOutOfRange(ratings, null, null), []);
 });
