@@ -255,13 +255,16 @@ setInterval(() => {
 
 // ============ Username ============
 
-let usernameCheck = 0;
+// How long to wait after the last keystroke before asking chess.com. Without
+// it every character fires a request, and a half-typed name shows a cross
+// while the user is still in the middle of writing it.
+const USERNAME_DEBOUNCE_MS = 400;
 
-// Ask chess.com whether the username exists, and show a tick or a cross
-async function verifyUsername(name) {
-    const icons = $$('[data-username-status]');
-    const token = ++usernameCheck;
-    const show = (kind, title) => icons.forEach((icon) => {
+let usernameCheck = 0;
+let usernameTimer = null;
+
+function showUsernameStatus(kind, title) {
+    $$('[data-username-status]').forEach((icon) => {
         icon.dataset.kind = kind ?? '';
         icon.title = title ?? '';
         icon.replaceChildren();
@@ -274,9 +277,14 @@ async function verifyUsername(name) {
             icon.append(svg);
         }
     });
+}
+
+// Ask chess.com whether the username exists, and show a tick or a cross
+async function verifyUsername(name) {
+    const token = ++usernameCheck;
 
     if (!name) {
-        show(null);
+        showUsernameStatus(null);
         $('start-btn').disabled = true;
         return;
     }
@@ -286,18 +294,32 @@ async function verifyUsername(name) {
             return;
         }
         const found = response.ok;
-        show(found ? 'ok' : 'bad', found ? 'Found on chess.com' : 'Not found on chess.com');
+        showUsernameStatus(found ? 'ok' : 'bad', found ? 'Found on chess.com' : 'Not found on chess.com');
         $('start-btn').disabled = !found;
     } catch (error) {
         if (token === usernameCheck) {
-            show(null, '');
+            showUsernameStatus(null, '');
             $('start-btn').disabled = false; // Offline: let them through anyway
         }
     }
 }
 
+// The same check, held back until the user stops typing. The icon is cleared
+// straight away so a result about an older, shorter name cannot sit there
+// contradicting what is now in the box.
+function verifyUsernameSoon(name) {
+    clearTimeout(usernameTimer);
+    usernameCheck++; // Retire any in-flight request: it is about an older name
+    showUsernameStatus(null);
+    $('start-btn').disabled = true;
+    if (!name) {
+        return;
+    }
+    usernameTimer = setTimeout(() => verifyUsername(name), USERNAME_DEBOUNCE_MS);
+}
+
 $$('[data-username]').forEach((input) => {
-    input.addEventListener('input', () => verifyUsername(input.value.trim()));
+    input.addEventListener('input', () => verifyUsernameSoon(input.value.trim()));
     input.addEventListener('change', () => saveSettings({ username: input.value.trim() }));
 });
 
