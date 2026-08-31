@@ -5,8 +5,11 @@
     --border: #dfe7e1;
     --border-strong: #cfdad2;
     --text: #16241b;
-    --muted: #5c6b62;
-    --faint: #8a978f;
+    /* Secondary text is mostly 11-12px in a 280px popup, so both tints are
+       held well above the 4.5:1 AA floor rather than at it: --muted clears
+       7:1 on every surface it lands on, --faint 4.5:1 on the darkest one. */
+    --muted: #47544b;
+    --faint: #626f67;
     --accent: #2b7a57;
     --accent-soft: #d9efe3;
     --accent-text: #1f5f43;
@@ -22,25 +25,27 @@
 }
 
 @media (prefers-color-scheme: dark) {
+    /* Neutral near-black ground and plain gray surfaces - green lives only in
+       the accents (dot, bar, button, links), not tinting every panel. */
     :root {
-        --bg: #161b18;
-        --surface: #1f2622;
-        --surface-2: #232c27;
-        --border: #2e3833;
-        --border-strong: #3a463f;
-        --text: #e8efe9;
-        --muted: #a3b0a8;
-        --faint: #6f7c74;
-        --accent: #4fb582;
-        --accent-soft: #1f3a2d;
-        --accent-text: #8fdcb4;
-        --warn: #e0a83a;
+        --bg: #121413;
+        --surface: #1d201e;
+        --surface-2: #242826;
+        --border: #313633;
+        --border-strong: #3f4541;
+        --text: #f2f4f3;
+        --muted: #b7bdb9;
+        --faint: #8f9591;
+        --accent: #4cbd85;
+        --accent-soft: #1d3a2b;
+        --accent-text: #93e0b8;
+        --warn: #e3ab3f;
         --warn-bg: #2b2517;
-        --warn-border: #4a3d1f;
-        --danger: #e86a55;
-        --danger-bg: #331d19;
-        --danger-border: #55302a;
-        --track: #2e3833;
+        --warn-border: #4d3f20;
+        --danger: #ee6f5a;
+        --danger-bg: #33201b;
+        --danger-border: #58332c;
+        --track: #313633;
         --shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
     }
 }
@@ -57,7 +62,7 @@
 
 body {
     width: 280px;
-    height: 340px;
+    height: 392px;
     margin: 0;
     padding: 0;
     overflow: hidden;
@@ -87,10 +92,6 @@ body {
     flex-shrink: 0;
 }
 
-.icon.small {
-    width: 14px;
-    height: 14px;
-}
 
 .muted {
     color: var(--muted);
@@ -228,8 +229,36 @@ button {
     filter: none;
 }
 
-.secondary {
+/* The main view reads as three things: the status panel, the limit and its
+   count, then the button. The view's own gap separates the three; inside the
+   middle one the two rows sit closer together. */
+.group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+/* Whatever height the popup has left over is split evenly above and below the
+   middle group, so the space over it and the space under it stay equal in
+   every state - and, all the slack being spent here, the button still lands on
+   the bottom edge. */
+[data-view="main"] .group {
     margin-top: auto;
+    margin-bottom: auto;
+}
+
+/* The button that starts a 1-hour block, pinned to the bottom of the popup.
+   Full width, carries the whole sentence of what it does, and hidden outright
+   when there is no hour to start. Ending a block that exists is the status
+   panel's pill, not this. */
+.actions {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.actions .secondary {
+    width: 100%;
 }
 
 /* ============ Inputs ============ */
@@ -283,34 +312,54 @@ input::placeholder {
     font-weight: 500;
 }
 
-.input-wrap {
-    position: relative;
-    display: flex;
-}
-
-.input-wrap input {
-    flex-grow: 1;
+.field input {
     height: 38px;
-    padding: 0 36px 0 12px;
+    padding: 0 12px;
     font-size: 14px;
     font-weight: 400;
 }
 
-.status-icon {
-    position: absolute;
-    right: 12px;
-    top: 0;
-    height: 38px;
-    display: flex;
-    align-items: center;
-}
-
-.status-icon[data-kind="ok"] {
-    color: var(--accent);
-}
-
-.status-icon[data-kind="bad"] {
+/* What the username check says when it comes back "no" */
+.error {
+    margin: 0;
+    font-size: 12px;
     color: var(--danger);
+}
+
+/* A link sitting in the middle of a sentence. It is a <button>, not an <a>,
+   because a popup that follows an href navigates itself instead of opening
+   the page in a tab. */
+.link {
+    padding: 0;
+    border: 0;
+    background: none;
+    font: inherit;
+    color: var(--accent);
+    text-decoration: underline;
+    cursor: pointer;
+    /* A path read across two lines is a path nobody can read */
+    white-space: nowrap;
+}
+
+.link:hover {
+    filter: brightness(1.15);
+}
+
+/* Shown inside "Start Chess Blocker" while chess.com is being asked about the
+   username, so the wait is visibly a wait rather than a dead button. */
+.spinner {
+    width: 14px;
+    height: 14px;
+    border: 2px solid rgba(255, 255, 255, 0.4);
+    border-top-color: #ffffff;
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
+    }
 }
 
 [data-view="setup"] .field {
@@ -321,19 +370,42 @@ input::placeholder {
 
 .status {
     display: flex;
-    align-items: center;
-    justify-content: space-between;
+    flex-direction: column;
+    gap: 4px;
     padding: 10px 12px;
     border: 1px solid var(--border);
     border-radius: 10px;
     background: var(--surface);
 }
 
-.status-left {
+.status-head {
     display: flex;
     align-items: center;
     gap: 8px;
-    font-weight: 500;
+    font-weight: 600;
+}
+
+/* The panel's one button - the master switch, or the way out of a 1-hour
+   block while there is one. Its own row across the panel: the icon plus a
+   label as long as "End the 1-hour block now" needs the width, and the
+   headline gets to keep a single line. */
+.status .pill {
+    width: 100%;
+    height: 32px;
+    margin-top: 6px;
+}
+
+.status .pill .icon {
+    width: 15px;
+    height: 15px;
+}
+
+/* The sentence under the headline: what this state means for chess.com.
+   Indented to clear the dot so it reads as one block of text. */
+.status-detail {
+    padding-left: 16px;
+    font-size: 12px;
+    color: var(--muted);
 }
 
 .dot {
@@ -344,12 +416,16 @@ input::placeholder {
     box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
-.status.paused {
+/* Paused, and a 1-hour block still waiting for the current game to end -
+   both amber: chess.com is open, but not in the plain watching state */
+.status.off,
+.status.pending {
     background: var(--warn-bg);
     border-color: var(--warn-border);
 }
 
-.status.paused .dot {
+.status.off .dot,
+.status.pending .dot {
     background: var(--warn);
     box-shadow: 0 0 0 3px var(--warn-border);
 }
@@ -485,9 +561,13 @@ input::placeholder {
     cursor: pointer;
 }
 
+/* The label names the setting in full, so it keeps its line and the value
+   beside it is the one that gets clipped */
 .row > span:first-child {
     flex-grow: 1;
+    flex-shrink: 0;
     font-weight: 500;
+    white-space: nowrap;
 }
 
 .row .value {

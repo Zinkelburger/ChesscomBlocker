@@ -3,12 +3,25 @@
     "minimum_chrome_version": "111",
     "permissions": [
         "storage",
-        "alarms"
+        "alarms",
+        "declarativeNetRequestWithHostAccess"
     ],
     "host_permissions": [
         "https://api.chess.com/*",
         "https://*.chess.com/game*",
         "https://*.chess.com/play/online*"
+    ],
+    "content_scripts": [
+        {
+            "matches": [
+                "https://*.chess.com/game*",
+                "https://*.chess.com/play/online*"
+            ],
+            "js": [
+                "detectUsername.js"
+            ],
+            "world": "MAIN"
+        }
     ],
     "background": {
         "service_worker": "background.js"

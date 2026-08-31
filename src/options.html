@@ -13,10 +13,9 @@
         <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></symbol>
         <symbol id="i-back" viewBox="0 0 24 24"><path d="M19 12H5"/><path d="M12 19l-7-7 7-7"/></symbol>
         <symbol id="i-chevron" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></symbol>
-        <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></symbol>
+        <symbol id="i-pause" viewBox="0 0 24 24"><path d="M10 5v14"/><path d="M15 5v14"/></symbol>
+        <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5l11 7-11 7z"/></symbol>
         <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></symbol>
-        <symbol id="i-pause" viewBox="0 0 24 24"><rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/></symbol>
-        <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 4.5v15a1 1 0 0 0 1.5.86l12-7.5a1 1 0 0 0 0-1.72l-12-7.5A1 1 0 0 0 7 4.5z"/></symbol>
     </svg>
 
     <!-- ============ First run ============ -->
@@ -26,12 +25,11 @@
         </header>
         <label class="field">
             <span>Chess.com username</span>
-            <span class="input-wrap">
-                <input type="text" data-username autocomplete="off" spellcheck="false" autofocus>
-                <span class="status-icon" data-username-status></span>
-            </span>
+            <input type="text" data-username autocomplete="off" spellcheck="false" autofocus>
         </label>
-        <button class="primary" id="start-btn" type="button" disabled>Start blocking</button>
+        <p class="error" data-username-error hidden></p>
+        <p class="note" data-detect-hint><button class="link" data-open-play type="button">chess.com/play</button> to auto-detect username</p>
+        <button class="primary" id="start-btn" type="button">Start Chess Blocker</button>
     </section>
 
     <!-- ============ Main ============ -->
@@ -41,33 +39,54 @@
             <button class="icon-btn" data-go="settings" title="Settings" type="button"><svg class="icon"><use href="#i-gear"/></svg></button>
         </header>
 
+        <!-- Says exactly what is happening: the headline names the state, with
+             a second line under it only where there is more to say.
+             One button sits inside the same panel, under the state it acts on,
+             with an icon and a label that name the whole action: the master
+             switch, or - while a 1-hour block is up or waiting - the way out
+             of that block, which has to go before the switch comes back. -->
         <div class="status" id="status">
-            <span class="status-left"><span class="dot"></span><span id="status-text">Active</span></span>
-            <button class="pill" id="pause-btn" type="button">
-                <svg class="icon small"><use id="pause-icon" href="#i-pause"/></svg><span id="pause-label">Pause</span>
+            <span class="status-head">
+                <span class="dot"></span><span id="status-text"></span>
+            </span>
+            <span class="status-detail" id="status-detail"></span>
+            <button class="pill" id="status-btn" type="button">
+                <svg class="icon"><use id="status-icon" href="#i-pause"/></svg><span id="status-label"></span>
             </button>
         </div>
 
-        <div class="limit-row">
-            <span class="label">Block at</span>
-            <span class="limit-count" id="limit-count">
-                <input type="number" class="num" data-max-games min="1" step="1">
-                <span class="muted" id="limit-unit">losses</span>
-            </span>
-            <span class="limit-range" id="limit-range" hidden></span>
-        </div>
-
-        <div class="card">
-            <div class="card-head">
-                <span class="eyebrow" id="card-title">Losses</span>
-                <span class="big" id="card-value"></span>
+        <!-- The limit and the count against it are one thing read together -
+             the rule, then where you are against it - so they sit closer to
+             each other than to the panel above or the button below. -->
+        <div class="group">
+            <div class="limit-row">
+                <span class="label">Block at</span>
+                <span class="limit-count" id="limit-count">
+                    <input type="number" class="num" data-max-games min="1" step="1">
+                    <span class="muted" id="limit-unit">losses</span>
+                </span>
+                <span class="limit-range" id="limit-range" hidden></span>
             </div>
-            <div class="bar-track" id="card-bar"><div class="bar-fill" id="card-fill"></div></div>
-            <div class="rating-list" id="rating-list"></div>
-            <span class="note" id="card-note"></span>
+
+            <div class="card">
+                <div class="card-head">
+                    <span class="eyebrow" id="card-title">Losses</span>
+                    <span class="big" id="card-value"></span>
+                </div>
+                <div class="bar-track" id="card-bar"><div class="bar-fill" id="card-fill"></div></div>
+                <div class="rating-list" id="rating-list"></div>
+                <span class="note" id="card-note"></span>
+            </div>
         </div>
 
-        <button class="secondary" id="break-btn" type="button">Block after this game</button>
+        <!-- Starting a 1-hour block, pinned to the bottom. Only starting one:
+             once there is a block to end, that button is the status panel's.
+             When there is no hour to start (paused, the limit already blocks,
+             or a block is already running) it is hidden rather than greyed
+             out: the status panel above already says why. -->
+        <div class="actions">
+            <button class="secondary" id="break-btn" type="button" hidden></button>
+        </div>
     </section>
 
     <!-- ============ Settings list ============ -->
@@ -77,11 +96,11 @@
             <span class="title">Settings</span>
         </header>
         <div class="list">
-            <button class="row" data-go="username" type="button"><span>Username</span><span class="value" id="v-username"></span><svg class="icon chev"><use href="#i-chevron"/></svg></button>
+            <button class="row" data-go="username" type="button"><span>Chess.com account</span><span class="value" id="v-username"></span><svg class="icon chev"><use href="#i-chevron"/></svg></button>
             <button class="row" data-go="block" type="button"><span>Block when</span><span class="value" id="v-block"></span><svg class="icon chev"><use href="#i-chevron"/></svg></button>
-            <button class="row" data-go="reset" type="button"><span>Resets</span><span class="value" id="v-reset"></span><svg class="icon chev"><use href="#i-chevron"/></svg></button>
-            <button class="row" data-go="pause" type="button"><span>Pause</span><span class="value" id="v-pause"></span><svg class="icon chev"><use href="#i-chevron"/></svg></button>
-            <button class="row" data-go="games" type="button"><span>Games</span><span class="value" id="v-games"></span><svg class="icon chev"><use href="#i-chevron"/></svg></button>
+            <button class="row" data-go="reset" type="button"><span>Counter resets</span><span class="value" id="v-reset"></span><svg class="icon chev"><use href="#i-chevron"/></svg></button>
+            <button class="row" data-go="unblock" type="button"><span>Pausing</span><span class="value" id="v-unblock"></span><svg class="icon chev"><use href="#i-chevron"/></svg></button>
+            <button class="row" data-go="games" type="button"><span>Games counted</span><span class="value" id="v-games"></span><svg class="icon chev"><use href="#i-chevron"/></svg></button>
         </div>
     </section>
 
@@ -89,15 +108,14 @@
     <section class="view" data-view="username" hidden>
         <header class="bar">
             <button class="icon-btn back" data-go="settings" type="button"><svg class="icon"><use href="#i-back"/></svg></button>
-            <span class="title">Username</span>
+            <span class="title">Chess.com account</span>
         </header>
         <label class="field">
             <span>Chess.com username</span>
-            <span class="input-wrap">
-                <input type="text" data-username autocomplete="off" spellcheck="false">
-                <span class="status-icon" data-username-status></span>
-            </span>
+            <input type="text" data-username autocomplete="off" spellcheck="false">
         </label>
+        <p class="error" data-username-error hidden></p>
+        <p class="note" data-detect-hint><button class="link" data-open-play type="button">chess.com/play</button> to auto-detect username</p>
     </section>
 
     <!-- ============ Settings > Block when ============ -->
@@ -139,23 +157,23 @@
     <section class="view" data-view="reset" hidden>
         <header class="bar">
             <button class="icon-btn back" data-go="settings" type="button"><svg class="icon"><use href="#i-back"/></svg></button>
-            <span class="title">Resets</span>
+            <span class="title">Counter resets</span>
         </header>
         <div class="segmented">
-            <label><input type="radio" name="reset-mode" value="rolling"><span>Every 24h</span></label>
+            <label><input type="radio" name="reset-mode" value="rolling"><span>Rolling 24h</span></label>
             <label><input type="radio" name="reset-mode" value="midnight"><span>At midnight</span></label>
         </div>
         <p class="note" id="reset-hint"></p>
     </section>
 
-    <!-- ============ Settings > Pause ============ -->
-    <section class="view" data-view="pause" hidden>
+    <!-- ============ Settings > Unblocking ============ -->
+    <section class="view" data-view="unblock" hidden>
         <header class="bar">
             <button class="icon-btn back" data-go="settings" type="button"><svg class="icon"><use href="#i-back"/></svg></button>
-            <span class="title">Pause</span>
+            <span class="title">Pausing</span>
         </header>
         <label class="setting-row">
-            <span>Unpause on restart</span>
+            <span>Resume when the browser restarts</span>
             <span class="switch"><input type="checkbox" id="unpause-restart"><span class="knob"></span></span>
         </label>
     </section>
@@ -164,8 +182,9 @@
     <section class="view" data-view="games" hidden>
         <header class="bar">
             <button class="icon-btn back" data-go="settings" type="button"><svg class="icon"><use href="#i-back"/></svg></button>
-            <span class="title">Games</span>
+            <span class="title">Games counted</span>
         </header>
+        <p class="note">Only these games count towards your limit.</p>
         <span class="eyebrow">Time controls</span>
         <div class="chips">
             <label class="chip"><input type="checkbox" data-filter="bullet"><span>Bullet</span></label>

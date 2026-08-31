@@ -3,6 +3,8 @@
     "permissions": [
         "storage",
         "alarms",
+        "webRequest",
+        "webRequestBlocking",
         "https://api.chess.com/*",
         "https://*.chess.com/game*",
         "https://*.chess.com/play/online*"
@@ -11,6 +13,7 @@
         "scripts": [
             "shared.js",
             "lossCounter.js",
+            "chessApi.js",
             "background.js"
         ],
         "persistent": true

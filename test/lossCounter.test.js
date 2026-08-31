@@ -483,3 +483,184 @@ test('ratingsOutOfRange lists the time controls that tripped', () => {
     assert.deepStrictEqual(ratingsOutOfRange(ratings, null, 2000), ['blitz', 'rapid']);
     assert.deepStrictEqual(ratingsOutOfRange(ratings, null, null), []);
 });
+
+// ============ Locally recorded games ============
+//
+// chess.com's archive can lag hours behind the games it lists, so the content
+// script records games as they end and they are counted until the archive
+// catches up. These tests cover that ledger.
+
+const {
+    LOCAL_CLASSIFY_GRACE_SECONDS,
+    LOCAL_DUPLICATE_SECONDS,
+    UNTRACKED_TIME_CLASS,
+    mergeCounts,
+    appendLocalGame,
+    classifyLocalGames,
+    resolveLocalGames,
+    pruneLocalGames,
+    hasUnclassifiedLocalGames,
+    countLocalGames
+} = require('../src/lossCounter.js');
+
+const NOW = 1764800000;
+const statsAt = (timeClass, date) => ({ [`chess_${timeClass}`]: { last: { rating: 1000, date } } });
+
+test('a locally recorded loss is counted while the archive has not published it', () => {
+    const ledger = [{ endTime: NOW - 60, lost: true, timeClass: 'blitz' }];
+    const counted = countLocalGames(ledger, NOW - DAY_SECONDS, DEFAULT_FILTERS);
+    assert.strictEqual(counted.losses, 1);
+    assert.strictEqual(counted.games, 1);
+    assert.strictEqual(counted.oldestCountedLoss, NOW - 60);
+});
+
+test('a record is dropped once the archive publishes the same game', () => {
+    const ledger = [{ endTime: NOW - 60, lost: true, timeClass: 'blitz' }];
+    const kept = pruneLocalGames(ledger, [{ end_time: NOW - 75 }], NOW);
+    assert.deepStrictEqual(kept, []);
+});
+
+test('a record is kept when the archive holds only other games', () => {
+    const ledger = [{ endTime: NOW - 60, lost: true, timeClass: 'blitz' }];
+    const kept = pruneLocalGames(ledger, [{ end_time: NOW - 5000 }], NOW);
+    assert.strictEqual(kept.length, 1);
+});
+
+test('records age out of the ledger', () => {
+    const ledger = [{ endTime: NOW - 3 * DAY_SECONDS, lost: true, timeClass: 'blitz' }];
+    assert.deepStrictEqual(pruneLocalGames(ledger, [], NOW), []);
+});
+
+test('a game outside the window is not counted', () => {
+    const ledger = [{ endTime: NOW - DAY_SECONDS - 10, lost: true, timeClass: 'blitz' }];
+    assert.strictEqual(countLocalGames(ledger, NOW - DAY_SECONDS, DEFAULT_FILTERS).losses, 0);
+});
+
+test('a repeat of the same game end is not added twice', () => {
+    const first = appendLocalGame([], { endTime: NOW, lost: true, timeClass: null });
+    const second = appendLocalGame(first, { endTime: NOW + LOCAL_DUPLICATE_SECONDS - 1, lost: true, timeClass: null });
+    assert.strictEqual(second.length, 1);
+    const third = appendLocalGame(second, { endTime: NOW + LOCAL_DUPLICATE_SECONDS + 1, lost: true, timeClass: null });
+    assert.strictEqual(third.length, 2);
+});
+
+test('stats place a game in the pool whose last game moved with it', () => {
+    const ledger = [{ endTime: NOW, lost: true, timeClass: null }];
+    assert.deepStrictEqual(classifyLocalGames(ledger, statsAt('bullet', NOW - 3)), ['bullet']);
+    assert.deepStrictEqual(classifyLocalGames(ledger, statsAt('bullet', NOW - 5000)), [null]);
+    assert.deepStrictEqual(classifyLocalGames(ledger, {}), [null]);
+});
+
+test('the closest pool wins when two moved', () => {
+    const stats = { ...statsAt('bullet', NOW - 100), ...statsAt('blitz', NOW - 2) };
+    assert.deepStrictEqual(classifyLocalGames([{ endTime: NOW, timeClass: null }], stats), ['blitz']);
+});
+
+test('a pool already accounted for is not lent to the game after it', () => {
+    // A rated blitz game, then a Chess960 game a minute later. chess.com
+    // publishes no rating for Chess960, so nothing in stats moved for it and
+    // the blitz pool's last game is still the first one - which is the game
+    // that gets to keep it.
+    const ledger = [
+        { endTime: NOW - 60, lost: true, timeClass: null },
+        { endTime: NOW, lost: true, timeClass: null }
+    ];
+    assert.deepStrictEqual(classifyLocalGames(ledger, statsAt('blitz', NOW - 62)), ['blitz', null]);
+    // The same, once the first game has been classified by an earlier check
+    const settled = [{ ...ledger[0], timeClass: 'blitz' }, ledger[1]];
+    assert.deepStrictEqual(classifyLocalGames(settled, statsAt('blitz', NOW - 62)), ['blitz', null]);
+});
+
+test('a game no pool accounts for stops counting once its grace runs out', () => {
+    const ledger = [
+        { endTime: NOW - 60, lost: true, timeClass: null },
+        { endTime: NOW, lost: true, timeClass: null }
+    ];
+    const later = NOW + LOCAL_CLASSIFY_GRACE_SECONDS + 10;
+    const settled = resolveLocalGames(ledger, statsAt('blitz', NOW - 62), later);
+    assert.deepStrictEqual(settled.map((game) => game.timeClass), ['blitz', UNTRACKED_TIME_CLASS]);
+    assert.strictEqual(countLocalGames(settled, later - DAY_SECONDS, DEFAULT_FILTERS).losses, 1);
+});
+
+test('an unclassified record counts, then stops once stats write it off', () => {
+    const filters = { ...DEFAULT_FILTERS };
+    const fresh = [{ endTime: NOW - 10, lost: true, timeClass: null }];
+
+    // Nothing in stats moved: still inside the grace period, so it counts
+    const withinGrace = resolveLocalGames(fresh, {}, NOW);
+    assert.strictEqual(withinGrace[0].timeClass, null);
+    assert.strictEqual(countLocalGames(withinGrace, NOW - DAY_SECONDS, filters).losses, 1);
+
+    // Past the grace period it is an unrated or variant game, and stops counting
+    const later = NOW + LOCAL_CLASSIFY_GRACE_SECONDS + 10;
+    const settled = resolveLocalGames(fresh, {}, later);
+    assert.strictEqual(settled[0].timeClass, UNTRACKED_TIME_CLASS);
+    assert.strictEqual(countLocalGames(settled, later - DAY_SECONDS, filters).losses, 0);
+});
+
+test('unreachable stats leave a record unclassified rather than writing it off', () => {
+    const old = [{ endTime: NOW - 10 * LOCAL_CLASSIFY_GRACE_SECONDS, lost: true, timeClass: null }];
+    assert.strictEqual(resolveLocalGames(old, null, NOW)[0].timeClass, null);
+    assert.ok(hasUnclassifiedLocalGames(old));
+    assert.ok(!hasUnclassifiedLocalGames([{ endTime: NOW, lost: true, timeClass: 'blitz' }]));
+});
+
+test('a classified record obeys the time control filters', () => {
+    const ledger = [{ endTime: NOW - 60, lost: true, timeClass: 'daily' }];
+    // daily is off by default
+    assert.strictEqual(countLocalGames(ledger, NOW - DAY_SECONDS, DEFAULT_FILTERS).losses, 0);
+    const withDaily = { ...DEFAULT_FILTERS, daily: true };
+    assert.strictEqual(countLocalGames(ledger, NOW - DAY_SECONDS, withDaily).losses, 1);
+});
+
+test('a classified record is skipped when standard chess is filtered out', () => {
+    const ledger = [{ endTime: NOW - 60, lost: true, timeClass: 'blitz' }];
+    const noStandard = { ...DEFAULT_FILTERS, chess: false };
+    assert.strictEqual(countLocalGames(ledger, NOW - DAY_SECONDS, noStandard).losses, 0);
+});
+
+test('draws and wins count as games but not as losses', () => {
+    const ledger = [
+        { endTime: NOW - 120, lost: false, timeClass: 'blitz' },
+        { endTime: NOW - 60, lost: true, timeClass: 'blitz' }
+    ];
+    const counted = countLocalGames(ledger, NOW - DAY_SECONDS, DEFAULT_FILTERS);
+    assert.strictEqual(counted.games, 2);
+    assert.strictEqual(counted.losses, 1);
+    assert.strictEqual(counted.oldestCountedGame, NOW - 120);
+    assert.strictEqual(counted.oldestCountedLoss, NOW - 60);
+});
+
+test('archive and ledger counts add up, keeping the earlier reset time', () => {
+    const archive = { losses: 2, games: 3, oldestCountedLoss: NOW - 1000, oldestCountedGame: NOW - 1200 };
+    const local = { losses: 1, games: 1, oldestCountedLoss: NOW - 60, oldestCountedGame: NOW - 60 };
+    assert.deepStrictEqual(mergeCounts(archive, local), {
+        losses: 3,
+        games: 4,
+        oldestCountedLoss: NOW - 1000,
+        oldestCountedGame: NOW - 1200
+    });
+    assert.deepStrictEqual(
+        mergeCounts({ losses: 0, games: 0, oldestCountedLoss: null, oldestCountedGame: null }, local),
+        { losses: 1, games: 1, oldestCountedLoss: NOW - 60, oldestCountedGame: NOW - 60 }
+    );
+});
+
+test('the same game is never counted from both the archive and the ledger', () => {
+    const endTime = NOW - 60;
+    const archiveGames = [{
+        end_time: endTime,
+        time_class: 'blitz',
+        rules: 'chess',
+        white: { username: 'me', result: 'checkmated' },
+        black: { username: 'them', result: 'win' }
+    }];
+    const ledger = pruneLocalGames([{ endTime: endTime + 4, lost: true, timeClass: 'blitz' }], archiveGames, NOW);
+    const windowStart = NOW - DAY_SECONDS;
+    const counted = mergeCounts(
+        countLosses(archiveGames, 'me', windowStart, DEFAULT_FILTERS),
+        countLocalGames(ledger, windowStart, DEFAULT_FILTERS)
+    );
+    assert.strictEqual(counted.losses, 1);
+    assert.strictEqual(counted.games, 1);
+});

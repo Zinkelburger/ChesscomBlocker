@@ -39,3 +39,27 @@ test('countdowns read naturally', () => {
     assert.strictEqual(formatCountdown(BREAK_DURATION_MS), '1h 0m');
     assert.strictEqual(formatCountdown(5 * 3600000 + 12 * 60000), '5h 12m');
 });
+
+const { normalizeUsername } = require('../src/shared.js');
+
+test('usernames are lowercased and trimmed', () => {
+    assert.strictEqual(normalizeUsername('  Hikaru  '), 'hikaru');
+    assert.strictEqual(normalizeUsername('Big_Man-99'), 'big_man-99');
+    assert.strictEqual(normalizeUsername('altaccountq'), 'altaccountq');
+});
+
+test('a username that could not be one is rejected outright', () => {
+    for (const bad of ['', '   ', 'a/b', '../../pub', 'name with spaces', 'ünicode', null, undefined, 'x'.repeat(65)]) {
+        assert.strictEqual(normalizeUsername(bad), null, `${bad} should be rejected`);
+    }
+});
+
+// Whatever the page hands over goes through this before it is stored, so a
+// page global that is missing, renamed or replaced cannot put junk in storage
+test('anything the page could offer that is not a username is dropped', () => {
+    for (const bad of [{}, [], { username: 'x' }, 'a'.repeat(100), '<script>']) {
+        assert.strictEqual(normalizeUsername(bad), null);
+    }
+    // A name that is all digits is a real chess.com username, not junk
+    assert.strictEqual(normalizeUsername(12345), '12345');
+});
