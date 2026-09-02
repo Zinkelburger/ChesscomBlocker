@@ -496,8 +496,10 @@ const {
     UNTRACKED_TIME_CLASS,
     mergeCounts,
     appendLocalGame,
+    poolTotals,
     classifyLocalGames,
     resolveLocalGames,
+    publishedRecords,
     pruneLocalGames,
     hasUnclassifiedLocalGames,
     countLocalGames
@@ -663,4 +665,265 @@ test('the same game is never counted from both the archive and the ledger', () =
     );
     assert.strictEqual(counted.losses, 1);
     assert.strictEqual(counted.games, 1);
+});
+
+// ============ Placing games by pool totals ============
+//
+// The last-game time per pool can only ever place the most recent game in
+// that pool. The totals say how many games the pool gained since the previous
+// check, which places the ones before it.
+
+const statsWith = (pools) => {
+    const stats = {};
+    for (const [timeClass, { date, total }] of Object.entries(pools)) {
+        stats[`chess_${timeClass}`] = { last: { rating: 1000, date }, record: { win: total, loss: 0, draw: 0 } };
+    }
+    return stats;
+};
+
+test('poolTotals sums wins, losses and draws per tracked pool', () => {
+    const stats = {
+        chess_bullet: { record: { win: 10, loss: 5, draw: 1 } },
+        chess_blitz: { record: { win: 2 } },
+        chess960_daily: { record: { win: 100, loss: 100, draw: 100 } }
+    };
+    assert.deepStrictEqual(poolTotals(stats), { bullet: 16, blitz: 2 });
+    assert.deepStrictEqual(poolTotals({}), {});
+    assert.deepStrictEqual(poolTotals(null), {});
+});
+
+test('two games in one pool are both placed when the totals say the pool gained two', () => {
+    // Bullet loss at T, bullet loss at T+80; neither was placed before the
+    // second ended. The pool's last game names the second; the totals name
+    // the first.
+    const ledger = [
+        { endTime: NOW, lost: true, timeClass: null },
+        { endTime: NOW + 80, lost: true, timeClass: null }
+    ];
+    const before = { bullet: 100 };
+    const after = statsWith({ bullet: { date: NOW + 80, total: 102 } });
+    assert.deepStrictEqual(classifyLocalGames(ledger, after, before), ['bullet', 'bullet']);
+
+    const later = NOW + 80 + LOCAL_CLASSIFY_GRACE_SECONDS + 10;
+    const settled = resolveLocalGames(ledger, after, later, before);
+    assert.strictEqual(countLocalGames(settled, later - DAY_SECONDS, DEFAULT_FILTERS).losses, 2);
+});
+
+test('without previous totals only the last-game time places anything', () => {
+    const ledger = [
+        { endTime: NOW, lost: true, timeClass: null },
+        { endTime: NOW + 80, lost: true, timeClass: null }
+    ];
+    const after = statsWith({ bullet: { date: NOW + 80, total: 102 } });
+    assert.deepStrictEqual(classifyLocalGames(ledger, after, null), [null, 'bullet']);
+});
+
+test('a game the last-game time placed is not handed out again from the totals', () => {
+    // One bullet game, seen by the totals and by the last-game time alike:
+    // an unrated game a minute earlier must not inherit the pool from it
+    const ledger = [
+        { endTime: NOW - 60, lost: true, timeClass: null },
+        { endTime: NOW, lost: true, timeClass: null }
+    ];
+    const after = statsWith({ bullet: { date: NOW, total: 101 } });
+    assert.deepStrictEqual(classifyLocalGames(ledger, after, { bullet: 100 }), [null, 'bullet']);
+});
+
+test('a record classified at an earlier check does not eat the new spare', () => {
+    // The first game was placed last time (its game was in the previous
+    // totals). This time the pool gained one more game, which is the second.
+    const ledger = [
+        { endTime: NOW - 60, lost: true, timeClass: 'bullet' },
+        { endTime: NOW, lost: true, timeClass: null }
+    ];
+    // Stats lag: the last-game time still names the first game
+    const after = statsWith({ bullet: { date: NOW - 60, total: 101 } });
+    assert.deepStrictEqual(classifyLocalGames(ledger, after, { bullet: 100 }), ['bullet', 'bullet']);
+});
+
+test('spare games go to the newest unplaced records first', () => {
+    // Three records, the pool gained two: the oldest is the odd one out
+    const ledger = [
+        { endTime: NOW - 200, lost: true, timeClass: null },
+        { endTime: NOW - 100, lost: true, timeClass: null },
+        { endTime: NOW, lost: true, timeClass: null }
+    ];
+    const after = statsWith({ blitz: { date: NOW, total: 52 } });
+    assert.deepStrictEqual(classifyLocalGames(ledger, after, { blitz: 50 }), [null, 'blitz', 'blitz']);
+});
+
+test('when two pools gained games the most recently active one is served first', () => {
+    const ledger = [
+        { endTime: NOW - 400, lost: true, timeClass: null },
+        { endTime: NOW - 300, lost: true, timeClass: null }
+    ];
+    // Neither last-game time is within the tolerance of a record
+    const after = statsWith({
+        blitz: { date: NOW - 1000, total: 51 },
+        rapid: { date: NOW - 900, total: 21 }
+    });
+    assert.deepStrictEqual(
+        classifyLocalGames(ledger, after, { blitz: 50, rapid: 20 }),
+        ['blitz', 'rapid']
+    );
+});
+
+test('a pool with no previous total gives nothing away', () => {
+    const ledger = [{ endTime: NOW - 500, lost: true, timeClass: null }];
+    const after = statsWith({ bullet: { date: NOW - 5000, total: 7 } });
+    assert.deepStrictEqual(classifyLocalGames(ledger, after, { blitz: 3 }), [null]);
+});
+
+test('the grace period is over at the deadline itself, not a second later', () => {
+    const fresh = [{ endTime: NOW, lost: true, timeClass: null }];
+    const atDeadline = resolveLocalGames(fresh, {}, NOW + LOCAL_CLASSIFY_GRACE_SECONDS);
+    assert.strictEqual(atDeadline[0].timeClass, UNTRACKED_TIME_CLASS);
+    const justBefore = resolveLocalGames(fresh, {}, NOW + LOCAL_CLASSIFY_GRACE_SECONDS - 1);
+    assert.strictEqual(justBefore[0].timeClass, null);
+});
+
+// ============ Pruning against the archive ============
+
+test('an archived game accounts for one record only', () => {
+    // Two bullet games 100s apart; the archive has published only the first
+    const ledger = [
+        { endTime: NOW - 100, lost: true, timeClass: 'bullet' },
+        { endTime: NOW, lost: true, timeClass: 'bullet' }
+    ];
+    const kept = pruneLocalGames(ledger, [{ end_time: NOW - 104 }], NOW);
+    assert.deepStrictEqual(kept, [ledger[1]]);
+});
+
+test('each archived game takes the record nearest to it', () => {
+    const ledger = [
+        { endTime: NOW - 100, lost: true, timeClass: 'bullet' },
+        { endTime: NOW, lost: true, timeClass: 'bullet' }
+    ];
+    // Both published: both records go
+    assert.deepStrictEqual(pruneLocalGames(ledger, [{ end_time: NOW - 3 }, { end_time: NOW - 103 }], NOW), []);
+    // Two archived games a minute apart but only one record: one is left over
+    assert.strictEqual(publishedRecords([ledger[1]], [{ end_time: NOW - 3 }, { end_time: NOW - 60 }]).size, 1);
+});
+
+test('countLosses does not stop at a game that is out of order', () => {
+    const now = new Date(2024, 4, 15, 10, 30, 0, 0);
+    const windowStart = getWindowStart(now.getTime(), 'midnight');
+    const games = [
+        lostGameAt(new Date(2024, 4, 15, 9, 0, 0, 0)),
+        lostGameAt(new Date(2024, 4, 14, 9, 0, 0, 0)), // yesterday, listed after today
+        lostGameAt(new Date(2024, 4, 15, 9, 30, 0, 0))
+    ];
+    assert.strictEqual(countLosses(games, 'me', windowStart).losses, 2);
+});
+
+// ============ The verdict ============
+
+const {
+    RETRY_DELAY_MS,
+    RATING_POLL_MS,
+    classifyDeadline,
+    decideBlock
+} = require('../src/lossCounter.js');
+
+const NOW_MS = NOW * 1000;
+const noCount = { losses: 0, games: 0, oldestCountedLoss: null, oldestCountedGame: null };
+
+function decide(overrides = {}) {
+    return decideBlock({
+        nowMs: NOW_MS,
+        blockMode: 'losses',
+        maxGames: 5,
+        resetMode: 'rolling',
+        filters: DEFAULT_FILTERS,
+        ratingFloor: null,
+        ratingCeiling: null,
+        counted: noCount,
+        outage: false,
+        stats: {},
+        lastLimitHit: false,
+        localGames: [],
+        clockSkewMs: 0,
+        paused: false,
+        hourBlockUntil: null,
+        hourBlockPendingUntil: null,
+        ...overrides
+    });
+}
+
+test('the limit blocks in losses mode and wakes when the oldest loss ages out', () => {
+    const counted = { losses: 5, games: 7, oldestCountedLoss: NOW - 1000, oldestCountedGame: NOW - 2000 };
+    const verdict = decide({ counted });
+    assert.strictEqual(verdict.limitHit, true);
+    assert.strictEqual(verdict.blocked, true);
+    assert.strictEqual(verdict.nextReset, (NOW - 1000 + DAY_SECONDS + 1) * 1000);
+    assert.strictEqual(verdict.wakeAt, verdict.nextReset);
+    assert.strictEqual(verdict.ratings, null);
+});
+
+test('games mode counts every game and resets off the oldest game', () => {
+    const counted = { losses: 1, games: 5, oldestCountedLoss: NOW - 1000, oldestCountedGame: NOW - 2000 };
+    const verdict = decide({ counted, blockMode: 'games' });
+    assert.strictEqual(verdict.limitHit, true);
+    assert.strictEqual(verdict.nextReset, (NOW - 2000 + DAY_SECONDS + 1) * 1000);
+});
+
+test('paused means never blocked, whatever else is going on', () => {
+    const counted = { losses: 9, games: 9, oldestCountedLoss: NOW - 10, oldestCountedGame: NOW - 10 };
+    const verdict = decide({ counted, paused: true, hourBlockUntil: NOW_MS + 1000 });
+    assert.strictEqual(verdict.limitHit, true);
+    assert.strictEqual(verdict.blocked, false);
+});
+
+test('a 1-hour block blocks on its own and wakes when it ends', () => {
+    const verdict = decide({ hourBlockUntil: NOW_MS + 30 * 60000 });
+    assert.strictEqual(verdict.limitHit, false);
+    assert.strictEqual(verdict.blocked, true);
+    assert.strictEqual(verdict.wakeAt, NOW_MS + 30 * 60000);
+});
+
+test('a pending 1-hour block blocks and wakes when its request expires', () => {
+    const verdict = decide({ hourBlockPendingUntil: NOW_MS + 40 * 60000 });
+    assert.strictEqual(verdict.blocked, true);
+    assert.strictEqual(verdict.wakeAt, NOW_MS + 40 * 60000);
+});
+
+test('an outage arms a retry and never a wake-up for a reset that has passed', () => {
+    const counted = { losses: 5, games: 5, oldestCountedLoss: NOW - 2 * DAY_SECONDS, oldestCountedGame: NOW - 2 * DAY_SECONDS };
+    const verdict = decide({ counted, outage: true });
+    assert.strictEqual(verdict.blocked, true);
+    assert.strictEqual(verdict.wakeAt, NOW_MS + RETRY_DELAY_MS);
+});
+
+test('rating mode compares the tracked ratings and polls', () => {
+    const stats = { chess_blitz: { last: { rating: 1490 } }, chess_bullet: { last: { rating: 1600 } } };
+    const verdict = decide({ blockMode: 'rating', stats, ratingFloor: 1500 });
+    assert.deepStrictEqual(verdict.ratings, { bullet: 1600, blitz: 1490 });
+    assert.strictEqual(verdict.limitHit, true);
+    assert.strictEqual(verdict.nextReset, null);
+    assert.strictEqual(verdict.wakeAt, NOW_MS + RATING_POLL_MS);
+});
+
+test('rating mode holds the last verdict while the stats endpoint is unreachable', () => {
+    assert.strictEqual(decide({ blockMode: 'rating', stats: null, lastLimitHit: true }).limitHit, true);
+    assert.strictEqual(decide({ blockMode: 'rating', stats: null, lastLimitHit: false }).limitHit, false);
+    // and retries sooner than the poll
+    assert.strictEqual(decide({ blockMode: 'rating', stats: null }).wakeAt, NOW_MS + RETRY_DELAY_MS);
+    // while an unreachable stats endpoint in losses mode is not an outage
+    assert.strictEqual(decide({ stats: null }).wakeAt, null);
+});
+
+test('an unclassified record wakes the check a second past its grace, on the local clock', () => {
+    const localGames = [{ endTime: NOW, lost: true, timeClass: null }];
+    const expected = (NOW + LOCAL_CLASSIFY_GRACE_SECONDS + 1) * 1000;
+    assert.strictEqual(classifyDeadline(localGames, 0), expected);
+    // chess.com's clock 30s ahead: the record's time is 30s ahead of ours
+    assert.strictEqual(classifyDeadline(localGames, 30000), expected - 30000);
+    assert.strictEqual(classifyDeadline([{ endTime: NOW, timeClass: 'blitz' }], 0), null);
+    assert.strictEqual(decide({ localGames }).wakeAt, expected);
+});
+
+test('the earliest of the wake-up reasons wins', () => {
+    const counted = { losses: 5, games: 5, oldestCountedLoss: NOW - 1000, oldestCountedGame: NOW - 1000 };
+    const verdict = decide({ counted, hourBlockUntil: NOW_MS + 60000 });
+    assert.strictEqual(verdict.wakeAt, NOW_MS + 60000);
 });

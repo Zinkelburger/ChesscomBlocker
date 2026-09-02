@@ -19,11 +19,11 @@ const STATE_DEFAULTS = {
     games: 0,
     ratings: {},
     nextReset: null,
-    // The 1-hour block started by hand from this popup. `breakPending` is the
-    // wait for the current game to end; `breakUntil` is the deadline, which
-    // only starts once the block is actually on screen.
-    breakPending: false,
-    breakUntil: null,
+    // The 1-hour block started by hand from this popup. `hourBlockRequestedAt`
+    // is set while a live game holds the block back; `hourBlockUntil` is the
+    // deadline, which only starts once the block is actually on screen.
+    hourBlockRequestedAt: null,
+    hourBlockUntil: null,
     limitHit: false,
     // The master switch, stored inverted: `paused: true` is what the UI calls
     // "blocking is off" - chess.com is never blocked until it is turned on again
@@ -220,8 +220,8 @@ function renderRatingList(container, colorize) {
 //                       chess.com is never blocked, indefinitely.
 //   "your limit"        the counter doing its job: enough losses/games, or a
 //                       rating out of range, blocks until the counter resets.
-//   "a 1-hour block"    the one started by hand (stored as `breakPending`
-//                       then `breakUntil`).
+//   "a 1-hour block"    the one started by hand (stored as `hourBlockRequestedAt`
+//                       while a game holds it back, then `hourBlockUntil`).
 //
 // The main view offers at most one button for each: the status panel's pill,
 // and the button pinned to the bottom. Which is which depends on the state,
@@ -243,13 +243,13 @@ function statusOf() {
     if (state.paused) {
         return OFF;
     }
-    if (state.breakUntil && state.breakUntil > Date.now()) {
+    if (state.hourBlockUntil !== null && state.hourBlockUntil > Date.now()) {
         return HOUR_BLOCK;
     }
     if (state.limitHit) {
         return LIMIT_BLOCK;
     }
-    if (state.breakPending) {
+    if (state.hourBlockRequestedAt !== null) {
         return HOUR_PENDING;
     }
     return WATCHING;
@@ -272,7 +272,7 @@ function statusLines(phase) {
     if (phase === HOUR_BLOCK) {
         return [
             'Chess.com is blocked',
-            `Your 1-hour block ends in ${formatCountdown(state.breakUntil - Date.now())}.`
+            `Your 1-hour block ends in ${formatCountdown(state.hourBlockUntil - Date.now())}.`
         ];
     }
     if (phase === LIMIT_BLOCK) {
@@ -298,10 +298,10 @@ function statusLines(phase) {
 // something to have, not something to be nudged towards.
 function statusAction(phase) {
     if (phase === HOUR_BLOCK) {
-        return { label: 'End the 1-hour block now', icon: '#i-x', action: 'endBreak' };
+        return { label: 'End the 1-hour block now', icon: '#i-x', action: 'endHourBlock' };
     }
     if (phase === HOUR_PENDING) {
-        return { label: 'Cancel the 1-hour block', icon: '#i-x', action: 'endBreak' };
+        return { label: 'Cancel the 1-hour block', icon: '#i-x', action: 'endHourBlock' };
     }
     if (phase === OFF) {
         return { label: 'Resume extension', icon: '#i-play', action: 'resume', primary: true };
@@ -316,7 +316,7 @@ function statusAction(phase) {
 // chess.com is blocked already, so an hour on top means nothing.
 function hourBlockAction(phase) {
     return phase === WATCHING
-        ? { label: 'Block chess.com for 1 hour', action: 'startBreak' }
+        ? { label: 'Block chess.com for 1 hour', action: 'requestHourBlock' }
         : null;
 }
 
@@ -341,10 +341,10 @@ function renderStatus() {
     $('status-btn').dataset.action = panelAction.action;
 
     const hourBlock = hourBlockAction(phase);
-    $('break-btn').hidden = hourBlock === null;
+    $('hour-block-btn').hidden = hourBlock === null;
     if (hourBlock !== null) {
-        $('break-btn').textContent = hourBlock.label;
-        $('break-btn').dataset.action = hourBlock.action;
+        $('hour-block-btn').textContent = hourBlock.label;
+        $('hour-block-btn').dataset.action = hourBlock.action;
     }
 }
 
@@ -618,7 +618,7 @@ $$('[data-filter]').forEach((checkbox) => {
 // it onto the button along with the label that says so. `pause` and `resume`
 // are the two ends of the one master switch; the rest are messages by name.
 
-$$('#status-btn, #break-btn').forEach((button) => {
+$$('#status-btn, #hour-block-btn').forEach((button) => {
     button.addEventListener('click', () => {
         const action = button.dataset.action;
         if (action === 'pause' || action === 'resume') {
@@ -666,8 +666,8 @@ function normalizeSettings() {
     state.paused = state.paused === true;
     state.blocked = state.blocked === true;
     state.limitHit = state.limitHit === true;
-    // Stored as true by older builds, as the click's timestamp by current ones
-    state.breakPending = state.breakPending === true || typeof state.breakPending === 'number';
+    state.hourBlockRequestedAt = typeof state.hourBlockRequestedAt === 'number' ? state.hourBlockRequestedAt : null;
+    state.hourBlockUntil = typeof state.hourBlockUntil === 'number' ? state.hourBlockUntil : null;
     state.ratings = state.ratings ?? {};
 }
 

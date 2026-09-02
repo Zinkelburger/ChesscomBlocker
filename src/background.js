@@ -12,14 +12,9 @@ if (typeof importScripts === 'function') {
 // Alarm that re-checks when the counter is due to clear itself
 const RESET_ALARM = 'reset-window';
 
-// Minimum lead time the alarms API accepts; Chrome silently clamps to this
-const MIN_ALARM_DELAY_MS = 60000;
-
-// How long to wait before trying again when the API could not be reached
-const RETRY_DELAY_MS = 5 * 60000;
-
-// Rating mode has no reset window, so it re-checks on this interval instead
-const RATING_POLL_MS = 15 * 60000;
+// Minimum lead time the alarms API accepts. Chrome 120 and later allow half a
+// minute; earlier versions clamp it to a minute themselves, with a warning.
+const MIN_ALARM_DELAY_MS = 30000;
 
 // All of the user's games from the start of the counting window until now,
 // oldest first. Fetches every monthly archive the window touches - one, or two
@@ -67,8 +62,8 @@ async function storedClockSkewMs() {
     return typeof clockSkewMs === 'number' ? clockSkewMs : 0;
 }
 
-// Wake up when the window rolls over (or a break ends), so a block lifts
-// without the user having to click anything
+// Wake up when the window rolls over (or a 1-hour block ends), so a block
+// lifts without the user having to click anything
 async function scheduleResetAlarm(when) {
     await extensionApi.alarms.clear(RESET_ALARM);
     if (!when) {
@@ -79,77 +74,103 @@ async function scheduleResetAlarm(when) {
     });
 }
 
-// Earliest of the given times, ignoring nulls; null if there are none
-function earliest(...times) {
-    const valid = times.filter((time) => typeof time === 'number');
-    return valid.length ? Math.min(...valid) : null;
-}
-
-// A time that has not arrived yet, or null. Waking up for one that has already
-// passed is not a wake-up at all: scheduleResetAlarm can only clamp it to a
-// minute from now, and the check that follows re-arms it just the same. That
-// matters during an API outage, where the reset carried over from the last
-// good count ages out and would otherwise turn a five-minute retry into a
-// wake-up a minute for as long as the outage lasts.
-function upcoming(time) {
-    return typeof time === 'number' && time > Date.now() ? time : null;
-}
-
 // The archive's share of the last successful count, kept so an unreachable
 // archive does not reset the counter to zero
 const EMPTY_COUNT = { losses: 0, games: 0, oldestCountedLoss: null, oldestCountedGame: null };
 
-// Whether a count trips the limit, for the two counting modes. Rating mode
-// has no count and is decided from the stats endpoint instead.
-function outOfCountingRange(blockMode, counted, maxGames) {
-    if (blockMode === 'losses') {
-        return counted.losses >= maxGames;
-    }
-    if (blockMode === 'games') {
-        return counted.games >= maxGames;
-    }
-    return false;
-}
+// ============ The 1-hour block ============
+//
+// "Block chess.com for 1 hour" in the popup. Two keys in local storage:
+//   hourBlockUntil        the deadline, once the block is on screen
+//   hourBlockRequestedAt  the click, while a live game is holding the block
+//                         back; the hour starts when that game ends
+// Only the second exists while a game is running somewhere: with no live game
+// the hour starts at the click (requestHourBlock). Both expire on their own.
 
-// The popup's 1-hour block is a plain deadline in local storage. Once it passes
-// it is removed so the popup and content script see it as over. The storage
-// keys still say "break" so an existing install keeps its state; the UI calls
-// it "a 1-hour block" throughout, to keep it distinct from the limit and from
-// the master blocking switch.
-async function activeBreak(nowMs) {
-    const { breakUntil } = await extensionApi.storage.local.get({ breakUntil: null });
-    if (typeof breakUntil === 'number' && breakUntil > nowMs) {
-        return breakUntil;
+async function activeHourBlock(nowMs) {
+    const { hourBlockUntil } = await extensionApi.storage.local.get({ hourBlockUntil: null });
+    if (typeof hourBlockUntil === 'number' && hourBlockUntil > nowMs) {
+        return hourBlockUntil;
     }
-    if (breakUntil !== null) {
-        await extensionApi.storage.local.remove('breakUntil');
+    if (hourBlockUntil !== null) {
+        await extensionApi.storage.local.remove('hourBlockUntil');
     }
     return null;
 }
 
-// Between the click and the block actually appearing, the 1-hour block is only
-// a promise to block: the current game has to finish first. The hour starts
-// when the block does (beginBreak below), not when the button is clicked, so a
-// long game does not eat most of the hour. The promise expires an hour after
-// the click: with no chess.com page around to convert it, it would otherwise
-// block forever - and greet a visit days later with a fresh hour nobody asked
-// for. Returns when the block was asked for, or null.
-async function breakPending(nowMs) {
-    const stored = await extensionApi.storage.local.get({ breakPending: false });
-    // Older builds stored a plain flag; date it from now so it expires too
-    const since = stored.breakPending === true ? nowMs : stored.breakPending;
+// When the block was asked for, if a game is still holding it back, or null.
+// The request expires an hour after the click: the page that would convert it
+// may have been closed, and it would otherwise block forever - and greet a
+// visit days later with a fresh hour nobody asked for.
+async function hourBlockRequestedAt(nowMs) {
+    const { hourBlockRequestedAt: since } = await extensionApi.storage.local.get({ hourBlockRequestedAt: null });
     if (typeof since !== 'number') {
         return null;
     }
-    if (nowMs - since >= BREAK_DURATION_MS) {
-        await extensionApi.storage.local.remove('breakPending');
+    if (nowMs - since >= HOUR_BLOCK_MS) {
+        await extensionApi.storage.local.remove('hourBlockRequestedAt');
         return null;
-    }
-    if (stored.breakPending === true) {
-        await extensionApi.storage.local.set({ breakPending: since });
     }
     return since;
 }
+
+// Whether some open game page has a game running on it. Each page is asked,
+// since only the content script there can tell a live board from an idle
+// one. A tab with no content script in it (open since before the extension
+// was installed) cannot answer and cannot be blocked either, so it counts as
+// no game. Querying by URL needs the host permissions the manifest already
+// has; should the browser refuse anyway, the answer is no game, which blocks
+// right away - the safe way to be wrong.
+async function liveGameOpen() {
+    let tabs;
+    try {
+        tabs = await extensionApi.tabs.query({ url: GAME_PAGE_MATCH_PATTERNS });
+    } catch (error) {
+        return false;
+    }
+    const answers = await Promise.all(tabs.map((tab) => Promise.resolve()
+        .then(() => extensionApi.tabs.sendMessage(tab.id, { action: 'gameInProgress' }))
+        .catch(() => false)));
+    return answers.some((answer) => answer === true);
+}
+
+// The popup's button. With a game running somewhere the block waits for it
+// to end (and the hour starts then, so a long game does not eat most of it);
+// otherwise the hour starts now.
+async function requestHourBlock() {
+    if (await liveGameOpen()) {
+        await extensionApi.storage.local.set({ hourBlockRequestedAt: Date.now() });
+    } else {
+        await extensionApi.storage.local.set({ hourBlockUntil: Date.now() + HOUR_BLOCK_MS });
+        await extensionApi.storage.local.remove('hourBlockRequestedAt');
+    }
+    await checkGamesPlayed();
+}
+
+// The block is on screen now, so the hour starts now. Returns the deadline for
+// the page to count down from.
+async function beginHourBlock() {
+    const nowMs = Date.now();
+    const until = await activeHourBlock(nowMs);
+    const requestedAt = await hourBlockRequestedAt(nowMs);
+    if (requestedAt === null) {
+        return until;
+    }
+    const deadline = nowMs + HOUR_BLOCK_MS;
+    await extensionApi.storage.local.set({ hourBlockUntil: deadline });
+    await extensionApi.storage.local.remove('hourBlockRequestedAt');
+    // Answer the waiting page first; the recount (which arms the alarm that
+    // lifts the block at the deadline) can take a network round trip
+    checkGamesPlayed();
+    return deadline;
+}
+
+async function endHourBlock() {
+    await extensionApi.storage.local.remove(['hourBlockUntil', 'hourBlockRequestedAt']);
+    await checkGamesPlayed();
+}
+
+// ============ The master switch ============
 
 // Whether the master switch is off - "paused" in the UI, matching the
 // storage key. `unpauseOnRestart` keeps its name too, so an existing install
@@ -160,14 +181,29 @@ async function isPaused() {
     return paused === true;
 }
 
+// The popup's Pause/Resume pill. The popup does not offer to pause while a
+// 1-hour block is up - the pill ends the block instead, and only goes back to
+// being the switch once it is gone - so this drops any block it finds only to
+// keep a stale popup from leaving one behind to be revived by the next Resume.
+async function setPaused(paused) {
+    await extensionApi.storage.local.set({ paused });
+    if (paused) {
+        await extensionApi.storage.local.remove(['hourBlockUntil', 'hourBlockRequestedAt']);
+    }
+    await checkGamesPlayed();
+}
+
+// ============ The check ============
+
 // Everything the extension derives is about one account: the ledger of games
-// the content script saw, the archive's share of the last count, and the
-// ratings the popup shows. Carried across a change of username they would
-// count the old account's games under the new name, and - while the new name's
-// first fetch is still failing - block on numbers that were never its own. The
-// cached API responses are keyed by a path that carries the username, so they
-// could never be read back for the wrong account; they go only to save the
-// space. The settings themselves are the user's and are left alone.
+// the content script saw, the archive's share of the last count, the pool
+// totals the ledger is placed against, and the ratings the popup shows.
+// Carried across a change of username they would count the old account's
+// games under the new name, and - while the new name's first fetch is still
+// failing - block on numbers that were never its own. The cached API responses
+// are keyed by a path that carries the username, so they could never be read
+// back for the wrong account; they go only to save the space. The settings
+// themselves are the user's and are left alone.
 async function forgetOtherAccount(username) {
     const { trackedUsername } = await extensionApi.storage.local.get({ trackedUsername: null });
     if (trackedUsername === username) {
@@ -183,7 +219,7 @@ async function forgetOtherAccount(username) {
     }
     // Through the queue, so an append that is in flight is not resurrected
     await updateLedger(() => []);
-    await extensionApi.storage.local.remove(['archiveCounted', 'apiCache', 'ratings']);
+    await extensionApi.storage.local.remove(['archiveCounted', 'apiCache', 'ratings', 'poolTotals']);
     // limitHit is the verdict rating mode holds on to while the API is
     // unreachable, so it is the old account's too
     await extensionApi.storage.local.set({ trackedUsername: username, limitHit: false });
@@ -203,20 +239,23 @@ async function runCheck() {
 
     const username = normalizeUsername(settings.username);
     await forgetOtherAccount(username);
+
+    // The master switch and the 1-hour block are decided locally, so read them
+    // before any fetch: they have to take effect even while the API is
+    // unreachable, and even before a username is configured.
+    const paused = await isPaused();
+    const hourBlockUntil = await activeHourBlock(Date.now());
+    const requestedAt = await hourBlockRequestedAt(Date.now());
+    const hourBlockPendingUntil = requestedAt === null ? null : requestedAt + HOUR_BLOCK_MS;
+
     if (!username) {
         // Nothing to count until a username is configured, but a 1-hour
         // block still blocks on its own
         const nowMs = Date.now();
-        const breakUntil = await activeBreak(nowMs);
-        const pendingSince = await breakPending(nowMs);
-        const paused = await isPaused();
         await extensionApi.storage.local.set({
-            blocked: !paused && (breakUntil !== null || pendingSince !== null)
+            blocked: !paused && (hourBlockUntil !== null || hourBlockPendingUntil !== null)
         });
-        await scheduleResetAlarm(earliest(
-            upcoming(breakUntil),
-            pendingSince === null ? null : pendingSince + BREAK_DURATION_MS
-        ));
+        await scheduleResetAlarm(earliest(upcoming(hourBlockUntil, nowMs), hourBlockPendingUntil));
         return;
     }
     const maxGames = normalizeMaxGames(settings.maxGames);
@@ -226,37 +265,44 @@ async function runCheck() {
     const ratingFloor = normalizeRatingBound(settings.ratingFloor);
     const ratingCeiling = normalizeRatingBound(settings.ratingCeiling);
 
-    // The master switch and the 1-hour block are decided locally, so read them
-    // before the fetch: they have to take effect even while the API is
-    // unreachable.
-    const paused = await isPaused();
-    const breakUntil = await activeBreak(Date.now());
-    const pendingSince = await breakPending(Date.now());
-
     // The window can only move forward while the fetch is in flight, so the
     // archives chosen now still cover it; the count itself uses a fresh clock.
     // Rating mode needs the stats endpoint; so does placing a locally recorded
-    // game in a time control. Asking for it otherwise would double the request
-    // rate for nothing.
-    const needStats = blockMode === 'rating' || hasUnclassifiedLocalGames(await readLedger());
+    // game in a time control - and for that the copy has to be fresh, since
+    // the record is placed by how the totals moved since the last look.
+    // Asking otherwise would double the request rate for nothing, so `stats`
+    // stays undefined when nothing needs it.
+    const unplaced = hasUnclassifiedLocalGames(await readLedger());
+    const needStats = blockMode === 'rating' || unplaced;
     const games = await fetchGamesSince(username, getWindowStart(Date.now(), resetMode), Date.now());
-    const stats = needStats ? await fetchPlayerStats(username) : {};
+    const stats = needStats ? await fetchPlayerStats(username, { fresh: unplaced }) : undefined;
 
     const nowMs = Date.now();
+    const clockSkewMs = await storedClockSkewMs();
     // The ledger's timestamps live on chess.com's clock (see recordGameOver),
     // so the "now" they are resolved and pruned against does too
-    const nowSeconds = Math.round((nowMs + await storedClockSkewMs()) / 1000);
+    const nowSeconds = Math.round((nowMs + clockSkewMs) / 1000);
+    // The pool totals the previous stats response carried, against which the
+    // new one says how many games each pool gained (see classifyLocalGames)
+    const { poolTotals: previousTotals } = await extensionApi.storage.local.get({ poolTotals: null });
     // Games the archive has published are dropped from the ledger, so they are
     // never counted from both places. With the archive unreachable nothing can
     // be shown to be published, so nothing is dropped.
     const localGames = await updateLedger(
-        (current) => pruneLocalGames(resolveLocalGames(current, stats, nowSeconds), games ?? [], nowSeconds)
+        (current) => pruneLocalGames(
+            resolveLocalGames(current, stats ?? null, nowSeconds, previousTotals),
+            games ?? [],
+            nowSeconds
+        )
     ).catch((error) => {
         // A failed rewrite is not an empty ledger: count what is stored,
         // unpruned - briefly over-counting is the safe direction for a blocker
         console.error('Local game ledger update failed:', error);
         return readLedger();
     });
+    if (stats) {
+        await extensionApi.storage.local.set({ poolTotals: poolTotals(stats) });
+    }
     const windowStart = getWindowStart(nowMs, resetMode);
     const localCounted = countLocalGames(localGames, windowStart, filters);
 
@@ -275,25 +321,12 @@ async function runCheck() {
     }
     const counted = mergeCounts(archiveCounted, localCounted);
 
-    // The window only matters for the counting modes; in rating mode there is
-    // nothing to reset, so no alarm is needed for it either
-    let limitHit = outOfCountingRange(blockMode, counted, maxGames);
-    let nextReset = null;
-    // Only rating mode fetches ratings to compare, so the other modes leave the
-    // last known ones in place rather than blanking the popup's rating list.
-    let ratings = null;
-    if (blockMode === 'losses') {
-        nextReset = getNextReset(nowMs, resetMode, counted.oldestCountedLoss);
-    } else if (blockMode === 'games') {
-        nextReset = getNextReset(nowMs, resetMode, counted.oldestCountedGame);
-    } else if (stats === null) {
-        // Rating mode with no ratings to compare: hold the last verdict
-        const { limitHit: lastLimitHit } = await extensionApi.storage.local.get({ limitHit: false });
-        limitHit = lastLimitHit === true;
-    } else {
-        ratings = currentRatings(stats, filters);
-        limitHit = ratingsOutOfRange(ratings, ratingFloor, ratingCeiling).length > 0;
-    }
+    const { limitHit: lastLimitHit } = await extensionApi.storage.local.get({ limitHit: false });
+    const verdict = decideBlock({
+        nowMs, blockMode, maxGames, resetMode, filters, ratingFloor, ratingCeiling,
+        counted, outage, stats: stats ?? null, lastLimitHit, localGames, clockSkewMs,
+        paused, hourBlockUntil, hourBlockPendingUntil
+    });
 
     // Derived state is per-machine (nextReset depends on the local timezone)
     // and rewritten on every check, so it lives in local storage; sync is
@@ -301,35 +334,12 @@ async function runCheck() {
     await extensionApi.storage.local.set({
         losses: counted.losses,
         games: counted.games,
-        ...(ratings === null ? {} : { ratings }),
-        nextReset,
-        limitHit,
-        blocked: !paused && (limitHit || breakUntil !== null || pendingSince !== null)
+        ...(verdict.ratings === null ? {} : { ratings: verdict.ratings }),
+        nextReset: verdict.nextReset,
+        limitHit: verdict.limitHit,
+        blocked: verdict.blocked
     });
-
-    // Rating mode has no window to reset, so nothing else would ever re-arm
-    // the alarm: once a bound is crossed the block would have to be lifted by
-    // opening a chess.com game page, which is exactly what is blocked. Poll
-    // instead, so a rating that moves back into range clears the block.
-    const ratingPoll = blockMode === 'rating' ? nowMs + RATING_POLL_MS : null;
-    // A consumed alarm would otherwise leave a block from stale data with
-    // nothing to lift it, so an outage always leaves a retry armed.
-    const retry = outage || stats === null ? nowMs + RETRY_DELAY_MS : null;
-    // A record the stats endpoint has not placed yet counts provisionally and
-    // is written off once its grace period runs out - but only a check does
-    // the writing off, so one has to run when that moment comes, or a
-    // provisional block from an unrated or variant game would outlive its
-    // five minutes by the rest of the window.
-    const classifyDeadline = earliest(...localGames
-        .filter((game) => !game.timeClass)
-        .map((game) => (game.endTime + LOCAL_CLASSIFY_GRACE_SECONDS) * 1000));
-    // A pending 1-hour block expires too (see breakPending), and needs a
-    // check to notice when no chess.com page is open to convert it
-    const pendingExpiry = pendingSince === null ? null : pendingSince + BREAK_DURATION_MS;
-    await scheduleResetAlarm(earliest(
-        upcoming(nextReset), upcoming(breakUntil), ratingPoll, retry,
-        upcoming(classifyDeadline), pendingExpiry
-    ));
+    await scheduleResetAlarm(verdict.wakeAt);
 }
 
 // Checks are triggered from many places (tabs, the popup, alarms, startup)
@@ -374,48 +384,37 @@ async function recordGameOver(lost, endTime) {
     await checkGamesPlayed();
 }
 
-// The master switch, the popup's Pause/Resume pill. The popup does not offer
-// to pause while a 1-hour block is up - the pill ends the block instead, and
-// only goes back to being the switch once it is gone - so this drops any block
-// it finds only to keep a stale popup from leaving one behind to be revived by
-// the next Resume.
-async function setPaused(paused) {
-    await extensionApi.storage.local.set({ paused });
-    if (paused) {
-        await extensionApi.storage.local.remove(['breakUntil', 'breakPending']);
+// ============ Storage from earlier builds ============
+
+// Keys older builds wrote. The 1-hour block used to be stored as `breakUntil`
+// and `breakPending` (a plain `true` flag at first, the time of the click
+// later); both are carried over so an update does not cut a block short. The
+// rest are caches that predate chessApi.js, and derived state that used to be
+// written to sync - checkGamesPlayed rebuilds both.
+async function migrateStorage() {
+    const old = await extensionApi.storage.local.get({ breakPending: null, breakUntil: null });
+    const carried = {};
+    if (old.breakPending === true) {
+        carried.hourBlockRequestedAt = Date.now();
+    } else if (typeof old.breakPending === 'number') {
+        carried.hourBlockRequestedAt = old.breakPending;
     }
-    await checkGamesPlayed();
-}
-
-// "Block chess.com for 1 hour" from the popup. Only the time of the click is
-// stored: the content script decides when the block actually appears (right
-// away, or once the current game ends) and calls beginBreak at that moment.
-async function startBreak() {
-    await extensionApi.storage.local.set({ breakPending: Date.now() });
-    await checkGamesPlayed();
-}
-
-// The block is on screen now, so the hour starts now. Returns the deadline for
-// the page to count down from.
-async function beginBreak() {
-    const nowMs = Date.now();
-    const breakUntil = await activeBreak(nowMs);
-    const pending = await breakPending(nowMs);
-    if (pending === null) {
-        return breakUntil;
+    if (typeof old.breakUntil === 'number') {
+        carried.hourBlockUntil = old.breakUntil;
     }
-    const until = nowMs + BREAK_DURATION_MS;
-    await extensionApi.storage.local.set({ breakUntil: until, breakPending: false });
-    // Answer the waiting page first; the recount (which arms the alarm that
-    // lifts the block at `until`) can take a network round trip.
-    checkGamesPlayed();
-    return until;
+    if (Object.keys(carried).length > 0) {
+        await extensionApi.storage.local.set(carried);
+    }
+    await Promise.all([
+        extensionApi.storage.local.remove([
+            'breakPending', 'breakUntil',
+            'cachedEtag', 'cachedGames', 'cacheUrl', 'archiveCache', 'statsCache'
+        ]),
+        extensionApi.storage.sync.remove(['losses', 'nextReset', 'blocked'])
+    ]);
 }
 
-async function endBreak() {
-    await extensionApi.storage.local.remove(['breakUntil', 'breakPending']);
-    await checkGamesPlayed();
-}
+// ============ Triggers ============
 
 // Recount whenever a setting lands in storage. The write is what triggers
 // it, not a message from the popup: the popup's last edit is flushed to
@@ -453,20 +452,12 @@ extensionApi.runtime.onStartup.addListener(async () => {
     await checkGamesPlayed();
 });
 extensionApi.runtime.onInstalled.addListener(async () => {
-    // Tidy up keys from earlier layouts: the caches that predate chessApi.js,
-    // and derived state that used to be written to sync. checkGamesPlayed
-    // rebuilds both.
-    await Promise.all([
-        extensionApi.storage.local.remove([
-            'cachedEtag', 'cachedGames', 'cacheUrl', 'archiveCache', 'statsCache'
-        ]),
-        extensionApi.storage.sync.remove(['losses', 'nextReset', 'blocked'])
-    ]);
+    await migrateStorage();
     checkGamesPlayed();
 });
 
-// Messages from the popup and the content script. Only checkUsername expects
-// a reply; the rest deliberately return nothing.
+// Messages from the popup and the content script. Only checkUsername and
+// beginHourBlock expect a reply; the rest deliberately return nothing.
 extensionApi.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === 'checkUsername') {
         // The popup could ask chess.com itself, but its queue would be a
@@ -475,10 +466,10 @@ extensionApi.runtime.onMessage.addListener((request, sender, sendResponse) => {
         fetchPlayerExists(request.username).then(sendResponse, () => sendResponse('unknown'));
         return true; // Chrome needs this to keep the channel open
     }
-    if (request.action === 'beginBreak') {
+    if (request.action === 'beginHourBlock') {
         // The content script waits for the deadline before drawing its
         // countdown, so this one answers
-        beginBreak().then(sendResponse, () => sendResponse(null));
+        beginHourBlock().then(sendResponse, () => sendResponse(null));
         return true;
     }
     if (request.action === 'checkGamesPlayed') {
@@ -490,9 +481,9 @@ extensionApi.runtime.onMessage.addListener((request, sender, sendResponse) => {
         );
     } else if (request.action === 'setPaused') {
         setPaused(request.paused === true);
-    } else if (request.action === 'startBreak') {
-        startBreak();
-    } else if (request.action === 'endBreak') {
-        endBreak();
+    } else if (request.action === 'requestHourBlock') {
+        requestHourBlock();
+    } else if (request.action === 'endHourBlock') {
+        endHourBlock();
     }
 });

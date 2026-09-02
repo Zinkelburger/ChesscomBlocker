@@ -54,6 +54,8 @@ for (const target of TARGETS) {
         // neither belongs nor would work
         for (const cs of manifest.content_scripts.filter((cs) => cs.world !== 'MAIN')) {
             assert.strictEqual(cs.js[0], 'shared.js');
+            // and the card reader before the script that uses it
+            assert.deepStrictEqual(cs.js, ['shared.js', 'gameResult.js', 'content.js']);
         }
     });
 

@@ -9,6 +9,7 @@
             ],
             "js": [
                 "shared.js",
+                "gameResult.js",
                 "content.js"
             ]
         }

@@ -136,12 +136,40 @@ async function setUserAgent() {
 
 let requestQueue = Promise.resolve();
 let nextRequestAt = 0;
-let backoffUntil = 0;
-let consecutiveFailures = 0;
 
 function delay(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
 }
+
+// Run `task` once every other queued request has finished. Nothing in the
+// extension ever has two requests to api.chess.com in flight at once, which is
+// the difference between unlimited access and a 429.
+function enqueue(task) {
+    const run = requestQueue.then(async () => {
+        const wait = nextRequestAt - Date.now();
+        if (wait > 0) {
+            await delay(wait);
+        }
+        try {
+            return await task();
+        } finally {
+            nextRequestAt = Date.now() + REQUEST_GAP_MS;
+        }
+    });
+    requestQueue = run.then(() => {}, () => {});
+    return run;
+}
+
+// ============ Backing off ============
+//
+// On Chrome this file lives in a service worker that is shut down after half a
+// minute of quiet and started afresh by the next alarm or message. Memory
+// alone would forget a 429 by the time the retry came round, so the deadline
+// is kept in storage too and read back once per wake-up.
+
+let backoffUntil = 0;
+let consecutiveFailures = 0;
+let backoffRestored = null;
 
 // How long to stay off the API after `failures` consecutive ones. The server's
 // own Retry-After wins whenever it asks for longer than we would have waited.
@@ -164,57 +192,85 @@ function retryAfterMs(response) {
     return Number.isFinite(when) ? Math.max(when - Date.now(), 0) : null;
 }
 
-// Run `task` once every other queued request has finished. Nothing in the
-// extension ever has two requests to api.chess.com in flight at once, which is
-// the difference between unlimited access and a 429.
-function enqueue(task) {
-    const run = requestQueue.then(async () => {
-        const wait = nextRequestAt - Date.now();
-        if (wait > 0) {
-            await delay(wait);
-        }
-        try {
-            return await task();
-        } finally {
-            nextRequestAt = Date.now() + REQUEST_GAP_MS;
-        }
-    });
-    requestQueue = run.then(() => {}, () => {});
-    return run;
+function restoreBackoff() {
+    if (!backoffRestored) {
+        backoffRestored = (async () => {
+            try {
+                const { apiBackoff } = await extensionApi.storage.local.get({ apiBackoff: null });
+                if (typeof apiBackoff?.until === 'number' && apiBackoff.until > Date.now()) {
+                    backoffUntil = Math.max(backoffUntil, apiBackoff.until);
+                    consecutiveFailures = Math.max(consecutiveFailures, apiBackoff.failures | 0);
+                }
+            } catch (error) {
+                // Not running as an extension (the Node tests); nothing to restore
+            }
+        })();
+    }
+    return backoffRestored;
+}
+
+function storeBackoff() {
+    try {
+        const write = consecutiveFailures === 0
+            ? extensionApi.storage.local.remove('apiBackoff')
+            : extensionApi.storage.local.set({ apiBackoff: { until: backoffUntil, failures: consecutiveFailures } });
+        Promise.resolve(write).catch(() => {});
+    } catch (error) {
+        // Not running as an extension (the Node tests)
+    }
 }
 
 function noteSuccess() {
+    if (consecutiveFailures === 0) {
+        return;
+    }
     consecutiveFailures = 0;
     backoffUntil = 0;
+    storeBackoff();
 }
 
 function noteFailure(retryAfter) {
     consecutiveFailures += 1;
     backoffUntil = Date.now() + backoffDelay(consecutiveFailures, retryAfter);
+    storeBackoff();
 }
+
+// ============ The server's clock ============
 
 // The API's own Date header, kept as a running measure of how far this
 // machine's clock is from chess.com's. The ledger matches locally timed
 // records against server timestamps within a few minutes (see lossCounter.js
 // and recordGameOver in background.js), which a clock that is minutes off
-// would silently break in both directions. Best-effort by design.
+// would silently break in both directions. Best-effort by design, and written
+// only when it has moved by a second or more: the header has one-second
+// resolution, and every response would otherwise be a storage write.
+let lastStoredSkewMs = null;
+
 function noteServerTime(response) {
     const header = response.headers?.get('Date');
     const serverNow = header ? Date.parse(header) : NaN;
     if (!Number.isFinite(serverNow)) {
         return;
     }
+    const clockSkewMs = serverNow - Date.now();
+    if (lastStoredSkewMs !== null && Math.abs(clockSkewMs - lastStoredSkewMs) < 1000) {
+        return;
+    }
+    lastStoredSkewMs = clockSkewMs;
     try {
-        extensionApi.storage.local.set({ clockSkewMs: serverNow - Date.now() }).catch(() => {});
+        extensionApi.storage.local.set({ clockSkewMs }).catch(() => {});
     } catch (error) {
         // Not running as an extension (the Node tests); nothing to store into
     }
 }
 
+// ============ One request ============
+
 // One PubAPI GET. Never throws: every outcome comes back as a status the
 // caller can act on.
 function apiRequest(path, etag) {
     return enqueue(async () => {
+        await restoreBackoff();
         if (Date.now() < backoffUntil) {
             return { status: API_UNAVAILABLE, reason: 'backoff' };
         }
@@ -297,13 +353,15 @@ function writeCache(path, entry) {
 
 // Fetch `path`, revalidating against the cached ETag and falling back to the
 // cached copy when the API cannot be reached. `reduce` cuts the response down
-// to what is worth storing, and `empty` is what a 404/410 means here. Returns
-// null only when there is nothing usable at all.
-async function cachedRequest(path, reduce, empty) {
+// to what is worth storing, and `empty` is what a 404/410 means here. With
+// `fresh`, a young cached copy is revalidated rather than reused: a 304 is one
+// cheap round trip, and the caller has said the age matters. Returns null
+// only when there is nothing usable at all.
+async function cachedRequest(path, reduce, empty, { fresh = false } = {}) {
     const cache = await readCache();
     const entry = cache[path];
 
-    if (entry && Date.now() - entry.fetchedAt < REVALIDATE_AFTER_MS) {
+    if (entry && !fresh && Date.now() - entry.fetchedAt < REVALIDATE_AFTER_MS) {
         return entry.value;
     }
 
@@ -365,14 +423,16 @@ async function fetchArchivedGames(username, months) {
     return games;
 }
 
-// Current ratings and last-game times per pool. {} for an unknown user, null
-// when the API could not be reached and nothing is cached.
-function fetchPlayerStats(username) {
+// Current ratings, last-game times and game totals per pool. {} for an
+// unknown user, null when the API could not be reached and nothing is cached.
+// `fresh` asks for a revalidated copy: a game just recorded is placed by how
+// these have moved since the last look, which a minute-old copy cannot show.
+function fetchPlayerStats(username, { fresh = false } = {}) {
     const name = normalizeUsername(username);
     if (!name) {
         return Promise.resolve({});
     }
-    return cachedRequest(statsPath(name), (data) => data ?? {}, {});
+    return cachedRequest(statsPath(name), (data) => data ?? {}, {}, { fresh });
 }
 
 // Whether the player exists: 'yes', 'no', or 'unknown' when the API could not

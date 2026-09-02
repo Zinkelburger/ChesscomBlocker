@@ -30,6 +30,10 @@ function debugLog(...args) {
 // The chess.com pages that are blocked once the loss limit is hit
 const GAME_PAGE_PATTERN = /^https?:\/\/([^/]+\.)?chess\.com\/(game|play\/online)/;
 
+// The same pages as match patterns, for tabs.query. Kept in step with the
+// content_scripts matches in manifests/base.json.
+const GAME_PAGE_MATCH_PATTERNS = ['https://*.chess.com/game*', 'https://*.chess.com/play/online*'];
+
 // Chess.com usernames are ASCII letters, digits, underscore and hyphen.
 // Anything else is a typo, and interpolating it into a URL unchecked would be
 // a path traversal waiting to happen.
@@ -41,8 +45,9 @@ function normalizeUsername(name) {
     return USERNAME_PATTERN.test(trimmed) ? trimmed : null;
 }
 
-// How long "Block after this game" keeps the play pages blocked
-const BREAK_DURATION_MS = 60 * 60000;
+// How long the popup's "Block chess.com for 1 hour" keeps the play pages
+// blocked, once the block is on screen
+const HOUR_BLOCK_MS = 60 * 60000;
 
 // "5h 12m" / "12m" / "under a minute"
 function formatCountdown(ms) {
@@ -87,5 +92,5 @@ function askBackground(message) {
 
 // Export for the Node tests; harmless in the browser
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { GAME_PAGE_PATTERN, BREAK_DURATION_MS, formatCountdown, normalizeUsername, debugLog };
+    module.exports = { GAME_PAGE_PATTERN, GAME_PAGE_MATCH_PATTERNS, HOUR_BLOCK_MS, formatCountdown, normalizeUsername, debugLog };
 }

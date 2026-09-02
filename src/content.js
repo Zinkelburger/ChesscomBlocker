@@ -2,13 +2,13 @@
 // when the limit is reached (or a 1-hour block was started from the popup),
 // and tells the background script about games as soon as they end so the
 // block does not wait on the API.
+//
+// Depends on shared.js and gameResult.js, which the manifest loads first.
 
-// When only a rating change is available, changes below this are treated as
-// a loss rather than a draw
-const LOSS_RATING_CHANGE = -4;
-
-// How long to wait after a game ends before the chess.com API is likely to
-// know about it
+// How long to wait after a game ends before asking for a recount. The recount
+// straight after the report counts the game provisionally; chess.com's stats
+// endpoint takes a moment to list it, and this second look is what places it
+// in a time control (see classifyLocalGames in lossCounter.js).
 const API_CATCH_UP_DELAY_MS = 15000;
 
 // chess.com's game-over card, and the rating change inside it. Each selector
@@ -20,6 +20,10 @@ const BOARD_SELECTOR = '.player-component.player-bottom';
 // merely *opened* from the archive, not only when one ends. It is believed
 // only on a URL whose game was seen being played (liveGameSeenHere below);
 // anywhere else its delta describes some other game, or nothing.
+//
+// Once chess.com has finished rolling out the modal, the old card and
+// everything that exists for its sake can go: this selector, liveGameSeenHere,
+// the delta polling, and LOSS_RATING_CHANGE in gameResult.js.
 const OLD_CARD_SELECTOR = '.player-game-over-component';
 // When a game ends live, chess.com renders BOTH: the old card in the player
 // box and the v6 modal over the page, and the old card tends to land first.
@@ -30,13 +34,7 @@ const GAME_OVER_SELECTOR = `${OLD_CARD_SELECTOR}, ${MODAL_SELECTOR}`;
 const RATING_CHANGE_SELECTOR =
     '.rating-score-change, .game-over-stat-card-rating .game-over-stat-card-delta.game-over-stat-card-deltaRevealed';
 
-// The v6 modal states the result outright: the header carries a class like
-// "game-over-modal-header-userWon" and the title reads "You Won!" - but only
-// for a win. A loss names the winner by colour instead ("White Won", header
-// class game-over-modal-header-whiteWon). The colour never needs translating
-// into a side of the board: the user's own win is always phrased as "You
-// Won!", so on the user's own game a winner named by colour can only be the
-// opponent.
+// Where the v6 modal states the result (see readGameResult in gameResult.js)
 const RESULT_HEADER_SELECTOR = '.game-over-modal-header-component';
 const RESULT_TITLE_SELECTOR = '.game-over-modal-title-component';
 
@@ -52,12 +50,11 @@ const RATED_GAME_SELECTOR = '.rating-score-change, .game-over-stat-card-rating';
 const RATING_POLL_INTERVAL_MS = 500;
 const RATING_POLL_ATTEMPTS = 30;
 
-// Ignore a repeat of the game-over card this soon after the last one. Both
-// this and the background's own duplicate window (LOCAL_DUPLICATE_SECONDS)
-// are deliberately short: two quick bullet games can end barely a minute
-// apart, and a window wide enough to swallow one of those would let a real
-// game through. Counting the same game twice is the safe way to be wrong for
-// a blocker, and the archive settles it either way within hours.
+// Ignore a game-over card this soon after the last one was handled, even if
+// a new game seems to have begun in between: the card of the game that just
+// ended can render again while chess.com rearranges the page. Deliberately
+// short - two quick bullet games can end barely a minute apart, and a window
+// wide enough to swallow one of those would let a real game through.
 const GAME_OVER_DEBOUNCE_MS = 10000;
 
 // Signs that a new game has begun: moves being added to the move list, or
@@ -83,17 +80,25 @@ const LIVE_GAME_SELECTOR =
 // How often the blocked page redraws its countdown
 const BLOCK_COUNTDOWN_INTERVAL_MS = 30000;
 
+// ============ What this page knows ============
+//
+// One URL carries one game at a time, and these say where it has got to.
+// urlWatch resets them all when chess.com moves to another URL in-page.
+
 let blockPageShown = false;
 
-// When the game-over card was last handled, so one game end is reported once
+// When the game-over card was last handled
 let lastGameOverAt = 0;
 
 // Set when a block arrived in the middle of a game; applied once it ends
 let blockAfterGame = false;
 
-// Whether the game on this URL has already ended. Closing the game-over modal
-// leaves the board on screen with no card, which would otherwise look like a
-// game still being played and hold a block back until the next navigation.
+// Whether the game on this URL has already ended and been dealt with. While
+// set, the only thing left to notice is a new game beginning here (a rematch):
+// a game-over card is not looked for, so the same game's card rendering again
+// cannot report it twice. Closing the game-over modal leaves the board on
+// screen with no card, which would otherwise look like a game still being
+// played and hold a block back until the next navigation.
 let gameOverSeenHere = false;
 
 // Whether this URL's game was ever seen live (resign/draw buttons, a ticking
@@ -106,34 +111,35 @@ let gameOverSeenHere = false;
 // counted - the wrong direction for a blocker.
 let liveGameSeenHere = false;
 
+// ============ The blocked page ============
+
 // The deadline the popup's 1-hour block runs to, or null if this block is the
-// limit instead. A 1-hour block asked for in the popup stays pending until the
-// block is actually on screen - which is now - so this is where its hour starts.
-async function breakDeadline() {
-    const { breakUntil, breakPending } = await extensionApi.storage.local.get({
-        breakUntil: null,
-        breakPending: false
+// limit instead. A 1-hour block asked for during a game stays pending until
+// the block is actually on screen - which is now - so this is where its hour
+// starts.
+async function hourBlockDeadline() {
+    const { hourBlockUntil, hourBlockRequestedAt } = await extensionApi.storage.local.get({
+        hourBlockUntil: null,
+        hourBlockRequestedAt: null
     });
-    // Older builds stored the pending block as a flag, current ones as the
-    // time of the click
-    if (breakPending === true || typeof breakPending === 'number') {
-        const deadline = await askBackground({ action: 'beginBreak' });
+    if (typeof hourBlockRequestedAt === 'number') {
+        const deadline = await askBackground({ action: 'beginHourBlock' });
         if (typeof deadline === 'number') {
             return deadline;
         }
         // No answer (the background was mid-restart): better a countdown that
         // runs a touch long than calling this a limit block. The background
-        // expires the pending state on its own alarm regardless.
-        return Date.now() + BREAK_DURATION_MS;
+        // expires the request on its own alarm regardless.
+        return Date.now() + HOUR_BLOCK_MS;
     }
-    return typeof breakUntil === 'number' && breakUntil > Date.now() ? breakUntil : null;
+    return typeof hourBlockUntil === 'number' && hourBlockUntil > Date.now() ? hourBlockUntil : null;
 }
 
 // The single headline this page has always shown; it still says which of the
 // two blocks did it (the 1-hour block counts down, the limit does not)
-function blockedHeadline(breakUntil) {
-    return typeof breakUntil === 'number'
-        ? `Chess Blocker: Chess.com is blocked for another ${formatCountdown(breakUntil - Date.now())}.`
+function blockedHeadline(hourBlockUntil) {
+    return typeof hourBlockUntil === 'number'
+        ? `Chess Blocker: Chess.com is blocked for another ${formatCountdown(hourBlockUntil - Date.now())}.`
         : 'Chess Blocker: Daily game limit reached. Please take a well-deserved break.';
 }
 
@@ -148,10 +154,10 @@ async function showBlockedPage() {
     observer.disconnect();
     clearInterval(urlWatch);
 
-    const breakUntil = await breakDeadline();
+    const hourBlockUntil = await hourBlockDeadline();
 
     const heading = document.createElement('h1');
-    heading.textContent = blockedHeadline(breakUntil);
+    heading.textContent = blockedHeadline(hourBlockUntil);
     Object.assign(heading.style, {
         color: 'white',
         textShadow: '2px 2px 4px rgba(0, 0, 0, 0.5)',
@@ -171,16 +177,16 @@ async function showBlockedPage() {
 
     // The heading is the whole page, so nothing else is going to keep its
     // countdown honest for the hour it runs
-    if (typeof breakUntil === 'number') {
+    if (typeof hourBlockUntil === 'number') {
         const countdown = setInterval(() => {
-            if (Date.now() >= breakUntil) {
+            if (Date.now() >= hourBlockUntil) {
                 clearInterval(countdown);
                 // The background lifts the block on its own alarm; asking now
                 // covers a service worker that was asleep when it fired
                 sendToBackground({ action: 'checkGamesPlayed' });
                 return;
             }
-            heading.textContent = blockedHeadline(breakUntil);
+            heading.textContent = blockedHeadline(hourBlockUntil);
         }, BLOCK_COUNTDOWN_INTERVAL_MS);
     }
 }
@@ -273,6 +279,16 @@ extensionApi.storage.onChanged.addListener((changes, areaName) => {
     blockIfNeeded(changes.blocked.newValue, { waitForGameEnd: true });
 });
 
+// The background asks before starting a 1-hour block: with a game running
+// here the block waits for it, otherwise the hour starts at once
+extensionApi.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    if (request?.action === 'gameInProgress') {
+        sendResponse(gameInProgress());
+    }
+});
+
+// ============ Watching for the game to end ============
+
 // The game-over card, if this node is it or contains it. chess.com re-arranges
 // its markup from time to time, so match the node itself and its descendants
 // rather than assuming the card is added as the node we are handed.
@@ -283,9 +299,6 @@ function gameOverCard(node) {
     return node.matches(GAME_OVER_SELECTOR) ? node : node.querySelector(GAME_OVER_SELECTOR);
 }
 
-// Watch for the game-over card. This runs for every node chess.com adds to a
-// busy single-page app - clock ticks, move-list rows, animations - so the one
-// comparison that rules out the whole batch comes before any selector work.
 // Game activity after this URL's game already ended means a new game began
 // here without a navigation
 function newGameActivity(node) {
@@ -294,28 +307,28 @@ function newGameActivity(node) {
             || node.querySelector(NEW_GAME_ACTIVITY_SELECTOR) !== null);
 }
 
+// This runs for every node chess.com adds to a busy single-page app - clock
+// ticks, move-list rows, animations - so each branch does as little as it can
+// before ruling a node out.
 function handleMutations(mutationsList) {
-    // One game end can render the card more than once
-    const debounced = Date.now() - lastGameOverAt < GAME_OVER_DEBOUNCE_MS;
-    if (debounced && !gameOverSeenHere) {
-        return;
-    }
     for (const mutation of mutationsList) {
         if (mutation.type !== 'childList') {
             continue;
         }
         for (const addedNode of mutation.addedNodes) {
-            // Only once the game-over modal is gone: while it is up, replaying
-            // the finished game inside it must not look like a new one
-            if (gameOverSeenHere && newGameActivity(addedNode)
-                && document.querySelector(GAME_OVER_SELECTOR) === null) {
-                // A new game is being played on this same URL (a rematch), so
-                // a block arriving mid-game must wait for its end again
-                // rather than replacing a live board
-                gameOverSeenHere = false;
+            if (gameOverSeenHere) {
+                // The game here has ended and been dealt with. All that is
+                // left to notice is a new game beginning on this same URL (a
+                // rematch), so that a block arriving mid-game waits for its
+                // end again rather than replacing a live board - and only once
+                // the game-over modal is gone: while it is up, replaying the
+                // finished game inside it must not look like a new one.
+                if (newGameActivity(addedNode) && document.querySelector(GAME_OVER_SELECTOR) === null) {
+                    gameOverSeenHere = false;
+                }
                 continue;
             }
-            if (debounced) {
+            if (Date.now() - lastGameOverAt < GAME_OVER_DEBOUNCE_MS) {
                 continue;
             }
             const card = gameOverCard(addedNode);
@@ -328,7 +341,7 @@ function handleMutations(mutationsList) {
 }
 
 // A game just ended. Report it to the background right away, with whether the
-// rating change says we lost; either way ask for a recount once the API has
+// card says we lost; either way ask for a recount once the stats endpoint has
 // caught up. A block that was waiting for this game goes up once it is in.
 function handleGameOver(card) {
     lastGameOverAt = Date.now();
@@ -364,61 +377,14 @@ function handleGameOver(card) {
     });
 }
 
-// Whether the finished game was lost: true or false once the card says, or
-// null while it does not say yet. No rating element at all means this is not
-// a rated game of the bottom player's, so it is not ours to count.
-function readRatingChange(card) {
-    const ratingChangeElement = card.querySelector(RATING_CHANGE_SELECTOR);
-    if (ratingChangeElement === null) {
-        return null;
-    }
-    const ratingChange = Number.parseInt(ratingChangeElement.textContent.trim(), 10);
-    return Number.isFinite(ratingChange) ? ratingChange : null;
-}
-
-function detectLoss(card, lastTry = false) {
-    if (card.querySelector(RATED_GAME_SELECTOR) === null) {
-        return null;
-    }
-
-    // Prefer the stated result; a draw counts as not lost, matching how the
-    // background classifies games from the API archive
-    const headerClass = card.querySelector(RESULT_HEADER_SELECTOR)?.className ?? '';
-    const title = card.querySelector(RESULT_TITLE_SELECTOR)?.textContent ?? '';
-    if (/userwon/i.test(headerClass) || /you won/i.test(title)) {
-        return false;
-    }
-    if (/userlost/i.test(headerClass) || /you lost/i.test(title)) {
-        return true;
-    }
-    if (/draw/i.test(headerClass) || /draw/i.test(title)) {
-        return false;
-    }
-
-    // A winner named by colour is the user's loss, no delta needed: the
-    // rated-game marker above says this is the user's own game, their own win
-    // is always phrased "You Won!", and a draw was caught as "Draw" - so the
-    // colour can only be the opponent's. Skipping the delta also means not
-    // waiting out its reveal animation, and not misreading the floored-at-100
-    // delta of 0 that a loss leaves behind.
-    if (/whitewon|blackwon/i.test(headerClass) || /white won|black won/i.test(title)) {
-        return true;
-    }
-
-    // No stated result at all: the bare old card offers only the delta. A
-    // clearly negative delta is a loss whatever else renders; anything milder
-    // is ambiguous - at the 100 floor a loss moves the rating no further than
-    // a draw does - so keep polling and let the modal, which states the
-    // result, appear and outrank this card (see reportGameOver). Only once
-    // the polling is exhausted is a mild delta taken at face value.
-    const ratingChange = readRatingChange(card);
-    if (ratingChange === null) {
-        return null;
-    }
-    if (ratingChange < LOSS_RATING_CHANGE) {
-        return true;
-    }
-    return lastTry ? false : null;
+// The card as plain strings, for readGameResult (gameResult.js) to decide on
+function describeCard(card) {
+    return {
+        rated: card.querySelector(RATED_GAME_SELECTOR) !== null,
+        headerClass: card.querySelector(RESULT_HEADER_SELECTOR)?.className ?? '',
+        title: card.querySelector(RESULT_TITLE_SELECTOR)?.textContent ?? '',
+        deltaText: card.querySelector(RATING_CHANGE_SELECTOR)?.textContent ?? null
+    };
 }
 
 // Tell the background a game just ended, timing it at `seenAt` - when its card
@@ -437,7 +403,7 @@ function reportGameOver(card, seenAt, attempt = 0) {
     // after the card is still the one that gets read.
     const modal = document.querySelector(MODAL_SELECTOR);
     const current = modal ?? (card.isConnected ? card : (document.querySelector(GAME_OVER_SELECTOR) ?? card));
-    const lost = detectLoss(current, attempt >= RATING_POLL_ATTEMPTS);
+    const lost = readGameResult(describeCard(current), attempt >= RATING_POLL_ATTEMPTS);
     if (lost === null) {
         if (attempt >= RATING_POLL_ATTEMPTS) {
             debugLog('game over: gave up after', attempt + 1, 'attempts - no result or'
@@ -553,6 +519,8 @@ window.addEventListener('message', (event) => {
     debugLog('detection: the page-world script posted', event.data.username);
     rememberDetectedUsername(event.data.username);
 });
+
+// ============ Following chess.com's in-page navigation ============
 
 // chess.com is a single-page app: it swaps the board and changes the URL
 // without reloading. This tick follows the URL, and stops a pending block from
